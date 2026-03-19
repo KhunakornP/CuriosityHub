@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/services/">
+    <Project Path="services/FileSystemVideoStorage/FileSystemVideoStorage.csproj" />
+  </Folder>
+</Solution>
