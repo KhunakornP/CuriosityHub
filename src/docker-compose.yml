@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  video-storage:
+    build:
+      context: ../services/FileSystemVideoStorage
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    volumes:
+      - video_data:/app/videos
+
+volumes:
+  video_data:
