@@ -3,7 +3,7 @@ version: '3.8'
 services:
   video-storage:
     build:
-      context: ../services/FileSystemVideoStorage
+      context: ./services/FileSystemVideoStorage
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
