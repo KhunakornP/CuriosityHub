@@ -1,0 +1,9 @@
+# Build artifacts
+bin/
+obj/
+
+# GitHub files
+.gitignore
+
+# Video files
+videos/
