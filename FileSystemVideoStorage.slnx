@@ -2,4 +2,8 @@
   <Folder Name="/services/">
     <Project Path="services/FileSystemVideoStorage/FileSystemVideoStorage.csproj" />
   </Folder>
+  <Folder Name="/src/" />
+  <Folder Name="/src/services/">
+    <Project Path="src/services/VideoUploadQueue/VideoUploadQueue.csproj" />
+  </Folder>
 </Solution>

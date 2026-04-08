@@ -1,0 +1,6 @@
+@VideoUploadQueue_HostAddress = http://localhost:5238
+
+GET {{VideoUploadQueue_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
