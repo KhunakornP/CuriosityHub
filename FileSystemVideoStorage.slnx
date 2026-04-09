@@ -4,7 +4,10 @@
   </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/services/">
+    <Project Path="src/services/gateway/gateway.csproj" />
+    <Project Path="src/services/VideoMetadata/VideoMetadata.csproj" />
     <Project Path="src/services/VideoStreaming/VideoStreaming.csproj" />
     <Project Path="src/services/VideoUploadQueue/VideoUploadQueue.csproj" />
+    <Project Path="src/services/VideoViews/VideoViews.csproj" />
   </Folder>
 </Solution>
