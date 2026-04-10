@@ -21,9 +21,12 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
     depends_on:
-      - rabbitmq
-      - mongodb
-      - video-storage
+      rabbitmq:
+        condition: service_healthy
+      mongodb:
+        condition: service_started
+      video-storage:
+        condition: service_started
 
   video-streaming:
     build:
@@ -34,8 +37,28 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
     depends_on:
-      - mongodb
-      - video-storage
+      mongodb:
+        condition: service_started
+      video-storage:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+
+  video-views:
+    build:
+      context: ./services/VideoViews
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__MongoDb=mongodb://mongodb:27017
+      - ConnectionStrings__RabbitMq=rabbitmq
+    depends_on:
+      mongodb:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -45,6 +68,12 @@ services:
     environment:
       - RABBITMQ_DEFAULT_USER=guest
       - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
 
   mongodb:
     image: mongo:latest
