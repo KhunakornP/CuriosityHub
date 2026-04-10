@@ -8,14 +8,25 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
 
+// Register RabbitMQ Connection as a Singleton so it stays connected and lists the publisher
+builder.Services.AddSingleton<IConnectionFactory>(sp => new ConnectionFactory { HostName = "rabbitmq" });
+builder.Services.AddSingleton<IConnection>(sp => 
+{
+    var factory = sp.GetRequiredService<IConnectionFactory>();
+    return factory.CreateConnectionAsync().GetAwaiter().GetResult();
+});
+
 var app = builder.Build();
+
+// Ensure connection is established on startup
+app.Services.GetRequiredService<IConnection>();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.MapPost("/upload", async (HttpContext context, IHttpClientFactory httpClientFactory) =>
+app.MapPost("/upload", async (HttpContext context, IHttpClientFactory httpClientFactory, IConnection rabbitConnection) =>
 {
     var objectId = ObjectId.GenerateNewId().ToString();
 
@@ -41,9 +52,7 @@ app.MapPost("/upload", async (HttpContext context, IHttpClientFactory httpClient
     {
         try
         {
-            var factory = new ConnectionFactory { HostName = "rabbitmq" };
-            using var connection = await factory.CreateConnectionAsync();
-            using var channel = await connection.CreateChannelAsync();
+            using var channel = await rabbitConnection.CreateChannelAsync();
 
             await channel.QueueDeclareAsync(queue: "video_uploaded_queue",
                                  durable: false,

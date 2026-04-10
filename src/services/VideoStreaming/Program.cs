@@ -9,14 +9,25 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
 
+// Register RabbitMQ Connection as a Singleton so it stays connected and lists the publisher
+builder.Services.AddSingleton<IConnectionFactory>(sp => new ConnectionFactory { HostName = "rabbitmq" });
+builder.Services.AddSingleton<IConnection>(sp => 
+{
+    var factory = sp.GetRequiredService<IConnectionFactory>();
+    return factory.CreateConnectionAsync().GetAwaiter().GetResult();
+});
+
 var app = builder.Build();
+
+// Ensure connection is established on startup
+app.Services.GetRequiredService<IConnection>();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.MapGet("/video", async (HttpContext context, IHttpClientFactory httpClientFactory) =>
+app.MapGet("/video", async (HttpContext context, IHttpClientFactory httpClientFactory, IConnection rabbitConnection) =>
 {
     var videoIdStr = context.Request.Query["videoId"].ToString();
     if (string.IsNullOrWhiteSpace(videoIdStr))
@@ -27,6 +38,26 @@ app.MapGet("/video", async (HttpContext context, IHttpClientFactory httpClientFa
     if (string.IsNullOrWhiteSpace(videoIdStr))
     {
         return Results.BadRequest("Missing videoId in query or header");
+    }
+
+    // Publish view event to RabbitMQ
+    try
+    {
+        using var channel = await rabbitConnection.CreateChannelAsync();
+        await channel.QueueDeclareAsync(queue: "views", durable: true, exclusive: false, autoDelete: false, arguments: null);
+        
+        // Viewer ID can come from a header or "Viewer" if unauthenticated
+        var viewer = context.Request.Headers["viewerId"].ToString();
+        if (string.IsNullOrWhiteSpace(viewer)) viewer = "Viewer";
+
+        var message = $"{viewer} views {videoIdStr}";
+        var body = Encoding.UTF8.GetBytes(message);
+
+        await channel.BasicPublishAsync(exchange: string.Empty, routingKey: "views", mandatory: false, basicProperties: new RabbitMQ.Client.BasicProperties(), body: body);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "Failed to publish view message to RabbitMQ.");
     }
 
     var videoStorageUrl = "http://video-storage:8080/video";
