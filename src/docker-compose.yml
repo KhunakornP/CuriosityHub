@@ -1,6 +1,25 @@
 version: '3.8'
 
 services:
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ServiceUrls__VideoStreaming=http://video-streaming:8080
+      - ServiceUrls__VideoMetadata=http://video-metadata:8080
+      - ServiceUrls__VideoViews=http://video-views:8080
+      - ServiceUrls__VideoUpload=http://video-upload-queue:8080
+      - ServiceUrls__CommentService=http://comment-service:8080
+    depends_on:
+      - video-streaming
+      - video-metadata
+      - video-views
+      - video-upload-queue
+
   video-storage:
     build:
       context: ./services/FileSystemVideoStorage
