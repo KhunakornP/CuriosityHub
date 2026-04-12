@@ -1,21 +1,43 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { useFetch } from '@vueuse/core'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { fetchVideoDetails, fetchVideoStreamBlobUrl } from '../apis/VideoService'
 
 const route = useRoute()
 const router = useRouter()
 
-const videoId = route.params.id
+const videoId = route.params.id as string
 
-// Template API Call to get specific video details
-const { data: videoData, isFetching: isFetchingVideo, error: videoError } = useFetch(`https://api.curiosityhub.com/videos/${videoId}`, {
-  immediate: false, // Set to true when API is ready
-}).json()
+const isFetchingVideo = ref(true)
+const videoData = ref<any>(null)
+const videoUrl = ref<string | null>(null)
+const videoError = ref<string | null>(null)
 
-// Template API Call to get recommendations
-const { data: recommendationsData, isFetching: isFetchingRecommendations, error: recommendationsError } = useFetch(`https://api.curiosityhub.com/videos/${videoId}/recommendations`, {
-  immediate: false, // Set to true when API is ready
-}).json()
+// For cleanup of Object URL to prevent memory leaks
+onUnmounted(() => {
+  if (videoUrl.value) {
+    URL.revokeObjectURL(videoUrl.value)
+  }
+})
+
+onMounted(async () => {
+  isFetchingVideo.value = true
+  try {
+    const [details, streamUrl] = await Promise.all([
+      fetchVideoDetails(videoId),
+      fetchVideoStreamBlobUrl(videoId)
+    ])
+    
+    if (details) videoData.value = details
+    if (streamUrl) videoUrl.value = streamUrl
+    
+  } catch (err) {
+    videoError.value = 'Failed to load video details'
+    console.error(err)
+  } finally {
+    isFetchingVideo.value = false
+  }
+})
 
 const navigateToHome = () => {
   router.push('/home')
@@ -33,17 +55,25 @@ const navigateToHome = () => {
     <div class="flex flex-col lg:flex-row gap-6">
       <!-- Main Video Area -->
       <div class="lg:w-3/4 flex-grow">
-        <div class="aspect-video bg-neutral-900 rounded-xl flex items-center justify-center border border-neutral-800 shadow-lg">
-          <p class="text-neutral-500">Video Player Placeholder (ID: {{ videoId }})</p>
+        <div class="aspect-video bg-neutral-900 rounded-xl flex items-center justify-center border border-neutral-800 shadow-lg overflow-hidden">
+          <div v-if="isFetchingVideo" class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          <video v-else-if="videoUrl" :src="videoUrl" controls autoplay class="w-full h-full object-cover">
+            Your browser does not support the video tag.
+          </video>
+          <p v-else class="text-neutral-500">Video not found or failed to load (ID: {{ videoId }})</p>
         </div>
         
         <div class="mt-4">
-          <h2 class="text-2xl font-semibold mb-2" v-if="!isFetchingVideo">Video Title Placeholder</h2>
+          <h2 class="text-2xl font-semibold mb-2" v-if="!isFetchingVideo">
+            {{ videoData?.metadata?.title || 'Video Title Placeholder' }}
+          </h2>
           <div class="flex items-center justify-between mb-4 border-b border-neutral-800 pb-4">
             <div class="flex items-center gap-4 text-sm text-neutral-400">
-              <span class="text-white hover:text-blue-400 transition-colors cursor-pointer">Channel Name</span>
-              <span>1.2M views</span>
-              <span>3 days ago</span>
+              <span class="text-white hover:text-blue-400 transition-colors cursor-pointer">
+                {{ videoData?.metadata?.channelName || 'Unknown Channel' }}
+              </span>
+              <span>{{ videoData?.views?.count || '0' }} views</span>
+              <span>{{ videoData?.metadata?.publishedAt || 'Unknown Date' }}</span>
             </div>
             <div class="flex gap-2">
               <button class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-full flex items-center gap-2 transition-colors">
@@ -55,8 +85,7 @@ const navigateToHome = () => {
             </div>
           </div>
           <div class="bg-neutral-900 p-4 rounded-xl text-sm leading-relaxed text-neutral-300">
-            Description placeholder. This is where the video summary and links go.
-            Call to action to subscribe or support the channel.
+            {{ videoData?.metadata?.description || 'Description placeholder. This is where the video summary and links go.' }}
           </div>
           
           <!-- Comment Section -->

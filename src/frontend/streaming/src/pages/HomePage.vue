@@ -1,19 +1,17 @@
 <script setup lang="ts">
-import { useFetch } from '@vueuse/core'
-import { ref, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import VideoCard, { type Video } from '../components/VideoCard.vue'
 import { useRouter } from 'vue-router'
+import { fetchRecentVideos } from '../apis/VideoService'
 
 const router = useRouter()
 
-// Template API Call setup using useFetch
-// Replace 'https://api.curiosityhub.com/videos/recent' with your actual API endpoint
-const { data, isFetching, error } = useFetch('https://api.curiosityhub.com/videos/recent', {
-  immediate: false, // Set to true when the API is ready
-}).json<{ videos: Video[] }>()
+const isFetching = ref(true)
+const error = ref<string | null>(null)
+const videos = ref<Video[]>([])
 
-// Placeholder data for demonstration
-const mockVideos = ref<Video[]>([
+// Placeholder data for demonstration fallback
+const mockVideos: Video[] = [
   {
     id: "1",
     title: "Exploring the Deep Ocean: Unseen Wonders",
@@ -29,43 +27,27 @@ const mockVideos = ref<Video[]>([
     channelName: "Tech Insider",
     views: 890000,
     publishedAt: "1 week ago"
-  },
-  {
-    id: "3",
-    title: "Culinary Adventures: Street Food in Tokyo",
-    thumbnailUrl: "",
-    channelName: "Foodie Traveler",
-    views: 560000,
-    publishedAt: "3 weeks ago"
-  },
-  {
-    id: "4",
-    title: "Building a Simple Web App with Vue.js",
-    thumbnailUrl: "",
-    channelName: "Code Academy",
-    views: 120000,
-    publishedAt: "1 day ago"
-  },
-  {
-    id: "5",
-    title: "Space Exploration: Next Steps for Humanity",
-    thumbnailUrl: "",
-    channelName: "Astro Science",
-    views: 2300000,
-    publishedAt: "1 month ago"
-  },
-  {
-    id: "6",
-    title: "Mastering TypeScript in 10 Minutes",
-    thumbnailUrl: "",
-    channelName: "Frontend Master",
-    views: 45000,
-    publishedAt: "5 hours ago"
   }
-])
+]
 
-// Computed property to use fetched data if available, otherwise mock data
-const videos = computed(() => data.value?.videos || mockVideos.value)
+onMounted(async () => {
+  isFetching.value = true
+  error.value = null
+  try {
+    const data = await fetchRecentVideos()
+    if (data && data.length > 0) {
+      videos.value = data
+    } else {
+      // Fallback to mock data if API fails or is empty during dev
+      videos.value = mockVideos
+    }
+  } catch (err) {
+    error.value = 'Failed to load videos'
+    videos.value = mockVideos
+  } finally {
+    isFetching.value = false
+  }
+})
 
 const navigateToVideo = (id: string) => {
   router.push(`/watch/${id}`)
