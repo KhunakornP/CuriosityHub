@@ -54,7 +54,28 @@ app.MapGet("/metadata", async (string videoId, IMongoCollection<VideoMetadata> c
 })
 .WithName("GetVideoMetadata");
 
+app.MapPut("/update", async ([FromBody] UpdateVideoMetadataRequest request, IMongoCollection<VideoMetadata> collection) =>
+{
+    if (string.IsNullOrWhiteSpace(request.VideoId)) return Results.BadRequest("VideoId is required");
+
+    var update = Builders<VideoMetadata>.Update
+        .Set(v => v.Title, request.Title)
+        .Set(v => v.Description, request.Description);
+
+    var result = await collection.UpdateOneAsync(v => v.VideoId == request.VideoId, update);
+    if (result.MatchedCount == 0) return Results.NotFound("Video not found");
+
+    return Results.Ok(new { message = "Metadata updated successfully" });
+});
+
 app.Run();
+
+public class UpdateVideoMetadataRequest
+{
+    public string VideoId { get; set; } = null!;
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+}
 
 public class VideoMetadataDto
 {

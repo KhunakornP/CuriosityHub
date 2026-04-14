@@ -74,7 +74,26 @@ app.MapGet("/replies", async ([FromHeader] string commentId, [FromServices] IMon
     return Results.Ok(replies);
 });
 
+app.MapPut("/update", async ([FromBody] UpdateCommentRequest request, [FromServices] IMongoCollection<Comment> commentsCollection) =>
+{
+    if (string.IsNullOrEmpty(request.Id))
+        return Results.BadRequest("Comment Id is required.");
+        
+    var update = Builders<Comment>.Update.Set(c => c.Text, request.Text);
+    var result = await commentsCollection.UpdateOneAsync(c => c.Id == request.Id, update);
+    
+    if (result.MatchedCount == 0) return Results.NotFound("Comment not found.");
+    
+    return Results.Ok(new { message = "Comment updated successfully." });
+});
+
 app.Run();
+
+public class UpdateCommentRequest
+{
+    public string Id { get; set; } = string.Empty;
+    public string Text { get; set; } = string.Empty;
+}
 
 public class Comment
 {

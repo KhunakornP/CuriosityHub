@@ -185,4 +185,45 @@ app.MapGet("/replies", async ([FromHeader] string commentId, IHttpClientFactory 
     return Results.Content(content, "application/json", null, (int)response.StatusCode);
 });
 
+// Admin Gateway New Endpoints
+app.MapDelete("/video", async ([FromQuery] string videoId, IHttpClientFactory clientFactory) =>
+{
+    var client = clientFactory.CreateClient("VideoUpload");
+    var request = new HttpRequestMessage(HttpMethod.Delete, $"/delete?videoId={videoId}");
+
+    var response = await client.SendAsync(request);
+    var content = await response.Content.ReadAsStringAsync();
+    return Results.Content(content, "application/json", null, (int)response.StatusCode);
+});
+
+app.MapPut("/video-metadata", async (HttpRequest req, IHttpClientFactory clientFactory) =>
+{
+    var client = clientFactory.CreateClient("VideoMetadata");
+    var request = new HttpRequestMessage(HttpMethod.Put, "/update")
+    {
+        Content = new StreamContent(req.Body)
+    };
+    if (req.ContentType != null)
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(req.ContentType);
+
+    var response = await client.SendAsync(request);
+    var content = await response.Content.ReadAsStringAsync();
+    return Results.Content(content, response.Content.Headers.ContentType?.ToString() ?? "application/json", null, (int)response.StatusCode);
+});
+
+app.MapPut("/comment", async (HttpRequest req, IHttpClientFactory clientFactory) =>
+{
+    var client = clientFactory.CreateClient("CommentService");
+    var request = new HttpRequestMessage(HttpMethod.Put, "/update")
+    {
+        Content = new StreamContent(req.Body)
+    };
+    if (req.ContentType != null)
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(req.ContentType);
+
+    var response = await client.SendAsync(request);
+    var content = await response.Content.ReadAsStringAsync();
+    return Results.Content(content, response.Content.Headers.ContentType?.ToString() ?? "application/json", null, (int)response.StatusCode);
+});
+
 app.Run();
