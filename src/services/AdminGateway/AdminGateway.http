@@ -1,0 +1,6 @@
+@AdminGateway_HostAddress = http://localhost:5055
+
+GET {{AdminGateway_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
