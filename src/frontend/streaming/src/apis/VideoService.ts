@@ -70,3 +70,25 @@ export async function fetchVideoStreamBlobUrl(videoId: string): Promise<string |
     return null
   }
 }
+
+export async function uploadVideo(formData: FormData): Promise<boolean> {
+  const url = new URL(`${getBaseUrl()}/upload`)
+  try {
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      body: formData,
+      // Note: Don't set 'Content-Type' header manually when sending FormData, 
+      // the browser will automatically set it to 'multipart/form-data' with the correct boundary.
+    })
+    
+    if (!res.ok) {
+      console.error('Failed to upload video', { status: res.status })
+      return false
+    }
+    
+    return true
+  } catch (err) {
+    console.error('Error uploading video', err)
+    return false
+  }
+}

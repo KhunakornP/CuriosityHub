@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { fetchVideoDetails, fetchVideoStreamBlobUrl } from '../apis/VideoService'
+import { fetchComments, fetchReplies, postComment, type Comment, type CreateCommentRequest } from '../apis/CommentService'
 
 const route = useRoute()
 const router = useRouter()
@@ -13,6 +14,18 @@ const videoData = ref<any>(null)
 const videoUrl = ref<string | null>(null)
 const videoError = ref<string | null>(null)
 
+const showFullDescription = ref(false)
+
+const comments = ref<(Comment & { replies?: Comment[], showReplies?: boolean, isLoadingReplies?: boolean })[]>([])
+const newCommentText = ref('')
+const isPostingComment = ref(false)
+const commentError = ref<string | null>(null)
+
+const commentCharLimit = 1000
+const isCommentValid = computed(() => {
+  return newCommentText.value.trim().length > 0 && newCommentText.value.length <= commentCharLimit
+})
+
 // For cleanup of Object URL to prevent memory leaks
 onUnmounted(() => {
   if (videoUrl.value) {
@@ -23,13 +36,15 @@ onUnmounted(() => {
 onMounted(async () => {
   isFetchingVideo.value = true
   try {
-    const [details, streamUrl] = await Promise.all([
+    const [details, streamUrl, loadedComments] = await Promise.all([
       fetchVideoDetails(videoId),
-      fetchVideoStreamBlobUrl(videoId)
+      fetchVideoStreamBlobUrl(videoId),
+      fetchComments(videoId)
     ])
     
     if (details) videoData.value = details
     if (streamUrl) videoUrl.value = streamUrl
+    if (loadedComments) comments.value = loadedComments.map(c => ({ ...c, showReplies: false }))
     
   } catch (err) {
     videoError.value = 'Failed to load video details'
@@ -40,7 +55,66 @@ onMounted(async () => {
 })
 
 const navigateToHome = () => {
-  router.push('/home')
+  router.push('/')
+}
+
+const toggleDescription = () => {
+  showFullDescription.value = !showFullDescription.value
+}
+
+const toggleReplies = async (comment: any) => {
+  if (comment.showReplies) {
+    comment.showReplies = false
+    return
+  }
+
+  if (!comment.replies) {
+    comment.isLoadingReplies = true
+    try {
+      const fetchedReplies = await fetchReplies(comment.id)
+      comment.replies = fetchedReplies
+    } catch (err) {
+      console.error('Failed to load replies:', err)
+      comment.replies = [] // Graceful degradation
+    } finally {
+      comment.isLoadingReplies = false
+    }
+  }
+  comment.showReplies = true
+}
+
+const submitComment = async () => {
+  if (!isCommentValid.value) return
+
+  isPostingComment.value = true
+  commentError.value = null
+
+  try {
+    const req: CreateCommentRequest = {
+      user: 'AnonymousUser', // Replace with real user if authentication exists
+      comment: newCommentText.value.trim(),
+      parent_Comment: null,
+      video_Id: videoId
+    }
+
+    const postedMsg = await postComment(req)
+    if (postedMsg) {
+      comments.value.unshift({ ...postedMsg, showReplies: false })
+      newCommentText.value = ''
+    } else {
+      commentError.value = "Failed to post comment. Please try again."
+    }
+  } catch (err) {
+    commentError.value = "A network error occurred while posting your comment."
+    console.error('Failed to post comment:', err)
+  } finally {
+    isPostingComment.value = false
+  }
+}
+
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString)
+  return isNaN(date.getTime()) ? 'Unknown Date' : date.toLocaleDateString()
 }
 </script>
 
@@ -55,7 +129,19 @@ const navigateToHome = () => {
     <div class="flex flex-col lg:flex-row gap-6">
       <!-- Main Video Area -->
       <div class="lg:w-3/4 flex-grow">
-        <div class="aspect-video bg-neutral-900 rounded-xl flex items-center justify-center border border-neutral-800 shadow-lg overflow-hidden">
+        <!-- Error State For Video Fetch -->
+        <div v-if="videoError" class="bg-red-900/20 border border-red-500/50 text-red-500 p-6 rounded-xl text-center mb-6">
+          <svg class="w-12 h-12 mx-auto mb-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          <h2 class="text-xl font-bold mb-2">Video Unavailable</h2>
+          <p>{{ videoError }}</p>
+          <button @click="navigateToHome" class="mt-4 px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-full transition-colors">
+            Return to Home
+          </button>
+        </div>
+
+        <div v-else class="aspect-video bg-neutral-900 rounded-xl flex items-center justify-center border border-neutral-800 shadow-lg overflow-hidden">
           <div v-if="isFetchingVideo" class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
           <video v-else-if="videoUrl" :src="videoUrl" controls autoplay class="w-full h-full object-cover">
             Your browser does not support the video tag.
@@ -63,7 +149,7 @@ const navigateToHome = () => {
           <p v-else class="text-neutral-500">Video not found or failed to load (ID: {{ videoId }})</p>
         </div>
         
-        <div class="mt-4">
+        <div v-if="!videoError" class="mt-4">
           <h2 class="text-2xl font-semibold mb-2" v-if="!isFetchingVideo">
             {{ videoData?.metadata?.title || 'Video Title Placeholder' }}
           </h2>
@@ -85,12 +171,21 @@ const navigateToHome = () => {
             </div>
           </div>
           <div class="bg-neutral-900 p-4 rounded-xl text-sm leading-relaxed text-neutral-300">
-            {{ videoData?.metadata?.description || 'Description placeholder. This is where the video summary and links go.' }}
+            <div :class="{'line-clamp-2': !showFullDescription}">
+              {{ videoData?.metadata?.description || 'No description available.' }}
+            </div>
+            <button 
+              v-if="videoData?.metadata?.description && videoData?.metadata?.description.length > 100" 
+              class="text-neutral-400 hover:text-white mt-1 text-xs font-semibold"
+              @click="toggleDescription"
+            >
+              {{ showFullDescription ? 'Show Less' : 'Show More' }}
+            </button>
           </div>
           
           <!-- Comment Section -->
           <div class="mt-8 border-t border-neutral-800 pt-6">
-            <h3 class="text-xl font-semibold mb-4">Comments Placeholder</h3>
+            <h3 class="text-xl font-semibold mb-4">{{ comments.length }} Comments</h3>
             
             <div class="flex gap-4 mb-8">
               <div class="w-10 h-10 rounded-full bg-neutral-700 flex-shrink-0"></div>
@@ -98,31 +193,80 @@ const navigateToHome = () => {
                 <textarea 
                   class="w-full bg-transparent border-b border-neutral-700 focus:border-blue-500 outline-none resize-none py-1 text-sm text-neutral-200 placeholder-neutral-500" 
                   rows="2" 
-                  placeholder="Add a public comment (Not implemented yet)..."
+                  v-model="newCommentText"
+                  :maxlength="commentCharLimit"
+                  placeholder="Add a public comment..."
+                  :disabled="isPostingComment"
                 ></textarea>
-                <div class="flex justify-end mt-2">
-                  <button class="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-sm font-medium rounded-full opacity-50 cursor-not-allowed">
-                    Comment
-                  </button>
+                <div class="flex justify-between items-center mt-2">
+                  <span class="text-xs" :class="newCommentText.length > commentCharLimit - 100 ? 'text-red-400' : 'text-neutral-500'">
+                    {{ newCommentText.length }} / {{ commentCharLimit }}
+                  </span>
+                  <div class="flex items-center gap-3">
+                    <span v-if="commentError" class="text-xs text-red-500 font-medium">{{ commentError }}</span>
+                    <button 
+                      @click="submitComment"
+                      :disabled="!isCommentValid || isPostingComment"
+                      class="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-sm font-medium rounded-full cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <span v-if="isPostingComment" class="flex items-center gap-2">
+                        <div class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Posting...
+                      </span>
+                      <span v-else>Comment</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <!-- Mock Comments -->
+            <!-- Dynamic Comments -->
             <div class="space-y-6">
-              <div v-for="i in 3" :key="i" class="flex gap-4">
-                <div class="w-10 h-10 rounded-full bg-neutral-800 flex-shrink-0"></div>
-                <div>
-                  <div class="flex items-center gap-2 mb-1">
-                    <span class="text-sm font-semibold text-white">@User{{ i }}</span>
-                    <span class="text-xs text-neutral-500">{{ i }} days ago</span>
-                  </div>
-                  <p class="text-sm text-neutral-300">
-                    This is a placeholder comment. It looks like a great video, thanks for sharing this content!
-                  </p>
-                  <div class="flex items-center gap-4 mt-2 text-neutral-400">
-                    <button class="hover:text-blue-400"><span class="text-xs font-medium">Like</span></button>
-                    <button class="hover:text-blue-400"><span class="text-xs font-medium">Reply</span></button>
+              <div v-for="comment in comments" :key="comment.id" class="flex flex-col gap-2">
+                <div class="flex gap-4">
+                  <div class="w-10 h-10 rounded-full bg-neutral-800 flex-shrink-0"></div>
+                  <div>
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="text-sm font-semibold text-white">@{{ comment.userId }}</span>
+                      <span class="text-xs text-neutral-500">{{ formatDate(comment.createdAt) }}</span>
+                    </div>
+                    <p class="text-sm text-neutral-300 break-words whitespace-pre-wrap">
+                      {{ comment.text }}
+                    </p>
+                    <div class="flex items-center gap-4 mt-2 text-neutral-400">
+                      <button class="hover:text-blue-400"><span class="text-xs font-medium">Like</span></button>
+                      <button class="hover:text-blue-400"><span class="text-xs font-medium">Reply</span></button>
+                    </div>
+                    
+                    <!-- View Replies Button -->
+                    <div class="mt-2 text-blue-400 hover:text-blue-300 text-sm font-medium cursor-pointer" @click="toggleReplies(comment)">
+                      <div v-if="comment.isLoadingReplies" class="flex gap-2 items-center text-neutral-400">
+                        <div class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                        <span>Loading...</span>
+                      </div>
+                      <span v-else>
+                        {{ comment.showReplies ? 'Hide replies' : 'View replies' }}
+                      </span>
+                    </div>
+
+                    <!-- Replies list -->
+                    <div v-if="comment.showReplies && comment.replies && comment.replies.length > 0" class="mt-4 space-y-4 pl-4 border-l-2 border-neutral-800">
+                      <div v-for="reply in comment.replies" :key="reply.id" class="flex gap-3">
+                        <div class="w-8 h-8 rounded-full bg-neutral-800 flex-shrink-0"></div>
+                        <div>
+                          <div class="flex items-center gap-2 mb-1">
+                            <span class="text-sm font-semibold text-white">@{{ reply.userId }}</span>
+                            <span class="text-xs text-neutral-500">{{ formatDate(reply.createdAt) }}</span>
+                          </div>
+                          <p class="text-xs text-neutral-300 break-words whitespace-pre-wrap">
+                            {{ reply.text }}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div v-else-if="comment.showReplies && comment.replies && comment.replies.length === 0" class="mt-2 pl-4 text-xs text-neutral-500">
+                      No replies yet.
+                    </div>
                   </div>
                 </div>
               </div>

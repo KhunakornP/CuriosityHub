@@ -13,7 +13,13 @@ import { RouterLink } from 'vue-router'
       </RouterLink>
     </div>
     
-    <div class="flex items-center">
+    <div class="flex items-center gap-6">
+      <RouterLink 
+        to="/upload" 
+        class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-1.5 px-4 rounded-full transition-colors flex items-center gap-2"
+      >
+        <span class="text-lg leading-none mb-0.5">+</span> Upload
+      </RouterLink>
       <div 
         class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm font-semibold cursor-not-allowed opacity-50"
         title="Profile (Not implemented yet)"
