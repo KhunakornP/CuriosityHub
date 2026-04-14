@@ -56,6 +56,14 @@ app.MapGet("/metadata", async (string videoId, IMongoCollection<VideoMetadata> c
 
 app.Run();
 
+public class VideoMetadataDto
+{
+    public string VideoId { get; set; } = null!;
+    public string Title { get; set; } = string.Empty;
+    public string? Description { get; set; }
+    public string? PublisherId { get; set; }
+}
+
 public class VideoMetadata
 {
     [BsonId]
@@ -63,10 +71,12 @@ public class VideoMetadata
     public string Id { get; set; } = null!;
     
     public string VideoId { get; set; } = null!;
+    public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public double TotalDuration { get; set; }
     public string? Resolution { get; set; }
     public string? PublisherId { get; set; }
+    public DateTime PublishedAt { get; set; }
 }
 
 public class MetadataRabbitMqListener : BackgroundService
@@ -84,51 +94,69 @@ public class MetadataRabbitMqListener : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var rabbitHostname = _configuration.GetConnectionString("RabbitMq") ?? "localhost";
+        var rabbitHostname = _configuration.GetConnectionString("RabbitMq") ?? "rabbitmq";
         var factory = new ConnectionFactory { HostName = rabbitHostname };
         
         _connection = await factory.CreateConnectionAsync(stoppingToken);
         _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
 
         await _channel.QueueDeclareAsync(queue: "video_metadata", durable: true, exclusive: false, autoDelete: false, arguments: null, cancellationToken: stoppingToken);
+        await _channel.QueueDeclareAsync(queue: "upload_replies", durable: true, exclusive: false, autoDelete: false, arguments: null, cancellationToken: stoppingToken);
 
         var consumer = new AsyncEventingBasicConsumer(_channel);
         consumer.ReceivedAsync += async (sender, ea) =>
         {
+            var body = ea.Body.ToArray();
+            var message = Encoding.UTF8.GetString(body);
+            JsonElement payload;
             try
             {
-                var body = ea.Body.ToArray();
-                var message = Encoding.UTF8.GetString(body);
-                
-                // Parse message to get video details (Template code)
-                // Expected format/logic to parse metadata
-                var videoId = "extracted_video_id"; // Replace with actual parsing logic based on your message structure
-                
+                payload = JsonSerializer.Deserialize<JsonElement>(message);
+                var videoId = payload.GetProperty("VideoId").GetString() ?? throw new Exception("VideoId is required");
+                var title = payload.GetProperty("Title").GetString() ?? "Unknown";
+                var description = payload.TryGetProperty("Description", out var descProp) ? descProp.GetString() : null;
+
                 var newMetadata = new VideoMetadata
                 {
+                    Id = ObjectId.GenerateNewId().ToString(),
                     VideoId = videoId,
-                    Description = "Parsed description template",
-                    TotalDuration = 120.5,
-                    Resolution = "1920x1080",
-                    PublisherId = "Publisher_UUID"
+                    Title = title,
+                    Description = description,
+                    TotalDuration = 0, // Placeholder
+                    Resolution = "Unknown",
+                    PublisherId = "AnonymousUser",
+                    PublishedAt = DateTime.UtcNow
                 };
 
                 using var scope = _serviceProvider.CreateScope();
                 var collection = scope.ServiceProvider.GetRequiredService<IMongoCollection<VideoMetadata>>();
 
-                var update = Builders<VideoMetadata>.Update
-                    .Set(x => x.Description, newMetadata.Description)
-                    .Set(x => x.TotalDuration, newMetadata.TotalDuration)
-                    .Set(x => x.Resolution, newMetadata.Resolution)
-                    .Set(x => x.PublisherId, newMetadata.PublisherId);
-                
-                var options = new UpdateOptions { IsUpsert = true };
+                // Step 3: Try inserting metadata
+                await collection.InsertOneAsync(newMetadata, cancellationToken: stoppingToken);
 
-                await collection.UpdateOneAsync(x => x.VideoId == newMetadata.VideoId, update, options, cancellationToken: stoppingToken);
+                // Saga Reply: Success
+                var reply = new { VideoId = videoId, Service = "Metadata", Status = "Success" };
+                var replyBody = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(reply));
+                await _channel.BasicPublishAsync(exchange: string.Empty, routingKey: "upload_replies", mandatory: false, basicProperties: new RabbitMQ.Client.BasicProperties(), body: replyBody, cancellationToken: stoppingToken);
             }
             catch(Exception ex)
             {
-                // Handle parsing or db exception
+                Console.Error.WriteLine($"Error processing metadata for video: {ex.Message}");
+                try
+                {
+                    // Saga Reply: Error
+                    if (!string.IsNullOrEmpty(message))
+                    {
+                        var failPayload = JsonSerializer.Deserialize<JsonElement>(message);
+                        if (failPayload.TryGetProperty("VideoId", out var vIdProp))
+                        {
+                            var reply = new { VideoId = vIdProp.GetString(), Service = "Metadata", Status = "Error" };
+                            var replyBody = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(reply));
+                            await _channel.BasicPublishAsync(exchange: string.Empty, routingKey: "upload_replies", mandatory: false, basicProperties: new RabbitMQ.Client.BasicProperties(), body: replyBody, cancellationToken: stoppingToken);
+                        }
+                    }
+                }
+                catch { /* Logging error on rollback failure */ }
             }
             finally
             {

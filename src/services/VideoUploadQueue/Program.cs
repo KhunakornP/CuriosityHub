@@ -1,14 +1,23 @@
+using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using System.Text;
 using System.Text.Json;
+using System.Collections.Concurrent;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
 
-// Register RabbitMQ Connection as a Singleton so it stays connected and lists the publisher
+// Register Saga State Tracker
+builder.Services.AddSingleton<SagaTracker>();
+
+// Register Saga Orchestrator Listener
+builder.Services.AddHostedService<UploadWorkflowOrchestrator>();
+
+// Register RabbitMQ Connection
 builder.Services.AddSingleton<IConnectionFactory>(sp => new ConnectionFactory { HostName = "rabbitmq" });
 builder.Services.AddSingleton<IConnection>(sp => 
 {
@@ -18,7 +27,6 @@ builder.Services.AddSingleton<IConnection>(sp =>
 
 var app = builder.Build();
 
-// Ensure connection is established on startup
 app.Services.GetRequiredService<IConnection>();
 
 if (app.Environment.IsDevelopment())
@@ -26,70 +34,196 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.MapPost("/upload", async (HttpContext context, IHttpClientFactory httpClientFactory, IConnection rabbitConnection) =>
+app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? description, IFormFile video, IHttpClientFactory httpClientFactory, IConnection rabbitConnection, SagaTracker tracker) =>
 {
-    var objectId = ObjectId.GenerateNewId().ToString();
+    if (video == null || video.Length == 0) return Results.BadRequest("No video provided.");
+    if (string.IsNullOrWhiteSpace(title)) return Results.BadRequest("Title is required.");
 
+    var videoId = ObjectId.GenerateNewId().ToString();
     var videoStorageUrl = "http://video-storage:8080/upload";
     
-    using var httpClient = httpClientFactory.CreateClient();
-    using var requestMessage = new HttpRequestMessage(HttpMethod.Post, videoStorageUrl);
+    // Register the saga state before upload
+    tracker.Sagas[videoId] = new SagaState { VideoId = videoId, Title = title };
+
+    using var client = httpClientFactory.CreateClient();
+
+    // Step 1: Upload to Storage (Mediator start)
+    using var streamContent = new StreamContent(video.OpenReadStream());
+    streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(video.ContentType);
     
-    requestMessage.Headers.Add("videoId", objectId);
-    
-    if (context.Request.Headers.TryGetValue("file-name", out var fileName))
+    using var storageRequest = new HttpRequestMessage(HttpMethod.Post, videoStorageUrl);
+    storageRequest.Headers.Add("VideoId", videoId);
+    storageRequest.Content = streamContent;
+
+    var storageResponse = await client.SendAsync(storageRequest);
+    if (!storageResponse.IsSuccessStatusCode)
     {
-        requestMessage.Headers.TryAddWithoutValidation("file-name", fileName.ToString());
-    }
-    
-    // Copy the Request Body directly to the forwarding request
-    requestMessage.Content = new StreamContent(context.Request.Body);
-    requestMessage.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(context.Request.ContentType ?? "video/mp4");
-
-    using var response = await httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
-    
-    if (response.IsSuccessStatusCode)
-    {
-        try
-        {
-            using var channel = await rabbitConnection.CreateChannelAsync();
-
-            await channel.QueueDeclareAsync(queue: "video_uploaded_queue",
-                                 durable: false,
-                                 exclusive: false,
-                                 autoDelete: false,
-                                 arguments: null);
-
-            var eventMessage = new { VideoId = objectId, Status = "Uploaded" };
-            var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(eventMessage));
-
-            await channel.BasicPublishAsync(exchange: string.Empty,
-                                 routingKey: "video_uploaded_queue",
-                                 mandatory: false,
-                                 basicProperties: new RabbitMQ.Client.BasicProperties(),
-                                 body: body);
-        }
-        catch (Exception ex)
-        {
-            app.Logger.LogError(ex, "Failed to publish to RabbitMQ");
-        }
+        tracker.Sagas.TryRemove(videoId, out _);
+        return Results.StatusCode(500); // Fail fast
     }
 
-    // Proxy the response back to the client
-    context.Response.StatusCode = (int)response.StatusCode;
-    foreach (var header in response.Headers)
+    // Step 2: Publish Events to independent queues
+    try
     {
-        if (header.Key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase))
-        {
-            continue;
-        }
-        context.Response.Headers.Append(header.Key, header.Value.ToArray());
+        using var channel = await rabbitConnection.CreateChannelAsync();
+        
+        var eventMessage = new { VideoId = videoId, Title = title, Description = description };
+        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(eventMessage));
+
+        // 1. Metadata Queue
+        await channel.QueueDeclareAsync(queue: "video_metadata", durable: true, exclusive: false, autoDelete: false, arguments: null);
+        await channel.BasicPublishAsync(exchange: string.Empty, routingKey: "video_metadata", mandatory: false, basicProperties: new RabbitMQ.Client.BasicProperties(), body: body);
+
+        // 2. Views Initialization Queue
+        await channel.QueueDeclareAsync(queue: "views", durable: true, exclusive: false, autoDelete: false, arguments: null);
+        await channel.BasicPublishAsync(exchange: string.Empty, routingKey: "views", mandatory: false, basicProperties: new RabbitMQ.Client.BasicProperties(), body: body);
     }
-    foreach (var header in response.Content.Headers)
+    catch (Exception ex)
     {
-        context.Response.Headers.Append(header.Key, header.Value.ToArray());
+        app.Logger.LogError(ex, "Failed to publish VideoUploadedEvent to RabbitMQ");
+        tracker.Sagas.TryRemove(videoId, out _);
+        // Rollback storage immediately if MQ goes down
+        using var rollbackRequest = new HttpRequestMessage(HttpMethod.Delete, "http://video-storage:8080/video");
+        rollbackRequest.Headers.Add("videoId", videoId);
+        await client.SendAsync(rollbackRequest);
+        return Results.StatusCode(500);
     }
-    await response.Content.CopyToAsync(context.Response.Body);
-});
+
+    return Results.Ok(new { VideoId = videoId, Status = "Upload initiated. Processing via Saga.", Title = title });
+}).DisableAntiforgery(); // Disable AntiForgery for API form upload
 
 app.Run();
+
+public class SagaState
+{
+    public string VideoId { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public bool MetadataSuccess { get; set; }
+    public bool ViewsSuccess { get; set; }
+    public bool IsFailed { get; set; }
+}
+
+public class SagaTracker
+{
+    public ConcurrentDictionary<string, SagaState> Sagas { get; } = new();
+}
+
+public class UploadWorkflowOrchestrator : BackgroundService
+{
+    private readonly IConfiguration _configuration;
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly SagaTracker _tracker;
+    private readonly ILogger<UploadWorkflowOrchestrator> _logger;
+    private IConnection? _connection;
+    private IChannel? _channel;
+
+    public UploadWorkflowOrchestrator(IConfiguration configuration, IHttpClientFactory httpClientFactory, SagaTracker tracker, ILogger<UploadWorkflowOrchestrator> logger)
+    {
+        _configuration = configuration;
+        _httpClientFactory = httpClientFactory;
+        _tracker = tracker;
+        _logger = logger;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var rabbitHostname = _configuration.GetConnectionString("RabbitMq") ?? "rabbitmq";
+        var factory = new ConnectionFactory { HostName = rabbitHostname };
+        
+        _connection = await factory.CreateConnectionAsync(stoppingToken);
+        _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
+
+        await _channel.QueueDeclareAsync(queue: "upload_replies", durable: true, exclusive: false, autoDelete: false, arguments: null, cancellationToken: stoppingToken);
+        await _channel.QueueDeclareAsync(queue: "video_uploaded", durable: true, exclusive: false, autoDelete: false, arguments: null, cancellationToken: stoppingToken);
+        await _channel.QueueDeclareAsync(queue: "storage_rollback", durable: true, exclusive: false, autoDelete: false, arguments: null, cancellationToken: stoppingToken);
+
+        var consumer = new AsyncEventingBasicConsumer(_channel);
+        consumer.ReceivedAsync += async (sender, ea) =>
+        {
+            try
+            {
+                var body = ea.Body.ToArray();
+                var message = Encoding.UTF8.GetString(body);
+                
+                var reply = JsonSerializer.Deserialize<JsonElement>(message);
+                if (reply.TryGetProperty("VideoId", out var vIdProp) && 
+                    reply.TryGetProperty("Service", out var serviceProp) && 
+                    reply.TryGetProperty("Status", out var statusProp))
+                {
+                    var videoId = vIdProp.GetString();
+                    var service = serviceProp.GetString();
+                    var status = statusProp.GetString();
+
+                    if (!string.IsNullOrEmpty(videoId) && _tracker.Sagas.TryGetValue(videoId, out var saga) && !saga.IsFailed)
+                    {
+                        if (status == "Error")
+                        {
+                            saga.IsFailed = true;
+                            _logger.LogError($"Upload failed for video {videoId} at service {service}. Initiating rollback.");
+                            
+                            // Rollback storage via HTTP
+                            try
+                            {
+                                using var client = _httpClientFactory.CreateClient();
+                                using var rollbackRequest = new HttpRequestMessage(HttpMethod.Delete, "http://video-storage:8080/video");
+                                rollbackRequest.Headers.Add("videoId", videoId);
+                                await client.SendAsync(rollbackRequest, stoppingToken);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "HTTP rollback to storage failed.");
+                            }
+
+                            // Publish storage_rollback for any other listeners
+                            var rollbackBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { VideoId = videoId }));
+                            await _channel.BasicPublishAsync(exchange: string.Empty, routingKey: "storage_rollback", mandatory: false, basicProperties: new RabbitMQ.Client.BasicProperties(), body: rollbackBytes, cancellationToken: stoppingToken);
+                            
+                            _tracker.Sagas.TryRemove(videoId, out _);
+                        }
+                        else if (status == "Success")
+                        {
+                            if (service == "Metadata") saga.MetadataSuccess = true;
+                            if (service == "Views") saga.ViewsSuccess = true;
+
+                            // Check if fully successful
+                            if (saga.MetadataSuccess && saga.ViewsSuccess)
+                            {
+                                _logger.LogInformation($"Video {videoId} completed saga! Publishing video_uploaded event.");
+                                var successEvent = new { VideoId = videoId, Title = saga.Title };
+                                var successBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(successEvent));
+                                
+                                // Step 5: Publish successful upload event
+                                await _channel.BasicPublishAsync(exchange: string.Empty, routingKey: "video_uploaded", mandatory: false, basicProperties: new RabbitMQ.Client.BasicProperties(), body: successBytes, cancellationToken: stoppingToken);
+                                
+                                _tracker.Sagas.TryRemove(videoId, out _);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing upload reply");
+            }
+            finally
+            {
+                if (_channel is not null)
+                {
+                    await _channel.BasicAckAsync(deliveryTag: ea.DeliveryTag, multiple: false, cancellationToken: stoppingToken);
+                }
+            }
+        };
+
+        // Listen for replies in the Upload Orchestrator
+        await _channel.BasicConsumeAsync(queue: "upload_replies", autoAck: false, consumer: consumer, cancellationToken: stoppingToken);
+        
+        await Task.Delay(Timeout.InfiniteTimeSpan, stoppingToken);
+    }
+
+    public override async Task StopAsync(CancellationToken stoppingToken)
+    {
+        if (_channel is not null) await _channel.CloseAsync(cancellationToken: stoppingToken);
+        if (_connection is not null) await _connection.CloseAsync(cancellationToken: stoppingToken);
+        await base.StopAsync(stoppingToken);
+    }
+}

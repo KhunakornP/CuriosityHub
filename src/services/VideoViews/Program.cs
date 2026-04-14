@@ -81,6 +81,7 @@ public class ViewsRabbitMqListener : BackgroundService
         _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
 
         await _channel.QueueDeclareAsync(queue: "views", durable: true, exclusive: false, autoDelete: false, arguments: null, cancellationToken: stoppingToken);
+        await _channel.QueueDeclareAsync(queue: "upload_replies", durable: true, exclusive: false, autoDelete: false, arguments: null, cancellationToken: stoppingToken);
 
         var consumer = new AsyncEventingBasicConsumer(_channel);
         consumer.ReceivedAsync += async (sender, ea) =>
@@ -90,19 +91,63 @@ public class ViewsRabbitMqListener : BackgroundService
                 var body = ea.Body.ToArray();
                 var message = Encoding.UTF8.GetString(body);
                 
-                // message format: "{viewer} views {videoId}"
-                var parts = message.Split(" views ");
-                if (parts.Length == 2)
+                // message format from view client: "{viewer} views {videoId}"
+                // message format from initialization: JSON with VideoId
+                if (message.Contains(" views "))
                 {
-                    var videoId = parts[1].Trim();
+                    var parts = message.Split(" views ");
+                    if (parts.Length == 2)
+                    {
+                        var videoId = parts[1].Trim();
 
-                    using var scope = _serviceProvider.CreateScope();
-                    var collection = scope.ServiceProvider.GetRequiredService<IMongoCollection<VideoViewCount>>();
+                        using var scope = _serviceProvider.CreateScope();
+                        var collection = scope.ServiceProvider.GetRequiredService<IMongoCollection<VideoViewCount>>();
 
-                    var update = Builders<VideoViewCount>.Update.Inc(x => x.TotalViews, 1);
-                    var options = new UpdateOptions { IsUpsert = true };
+                        var update = Builders<VideoViewCount>.Update.Inc(x => x.TotalViews, 1);
+                        var options = new UpdateOptions { IsUpsert = true };
 
-                    await collection.UpdateOneAsync(x => x.VideoId == videoId, update, options, cancellationToken: stoppingToken);
+                        await collection.UpdateOneAsync(x => x.VideoId == videoId, update, options, cancellationToken: stoppingToken);
+                    }
+                }
+                else 
+                {
+                    // Initialization from video upload
+                    try 
+                    {
+                        var payload = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(message);
+                        if (payload.TryGetProperty("VideoId", out var vIdProp)) 
+                        {
+                            var videoId = vIdProp.GetString();
+                            using var scope = _serviceProvider.CreateScope();
+                            var collection = scope.ServiceProvider.GetRequiredService<IMongoCollection<VideoViewCount>>();
+
+                            var newViewCount = new VideoViewCount {
+                                Id = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
+                                VideoId = videoId,
+                                TotalViews = 0
+                            };
+                            
+                            // Step 4: Try inserting views tracking entry
+                            await collection.InsertOneAsync(newViewCount, cancellationToken: stoppingToken);
+                            
+                            // Emit success
+                            var reply = new { VideoId = videoId, Service = "Views", Status = "Success" };
+                            var replyBody = Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(reply));
+                            await _channel.BasicPublishAsync(exchange: string.Empty, routingKey: "upload_replies", mandatory: false, basicProperties: new RabbitMQ.Client.BasicProperties(), body: replyBody, cancellationToken: stoppingToken);
+                        }
+                    }
+                    catch {
+                        // Might already exist or failed parse, ignore gracefully for initialization
+                        try {
+                            var p = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(message);
+                            if (p.TryGetProperty("VideoId", out var vId))
+                            {
+                                var reply = new { VideoId = vId.GetString(), Service = "Views", Status = "Error" };
+                                var replyBody = Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(reply));
+                                await _channel.BasicPublishAsync(exchange: string.Empty, routingKey: "upload_replies", mandatory: false, basicProperties: new RabbitMQ.Client.BasicProperties(), body: replyBody, cancellationToken: stoppingToken);
+                            }
+                        } catch { } // Totally unparseable
+                    }
                 }
             }
             finally

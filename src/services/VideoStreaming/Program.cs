@@ -1,6 +1,7 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -9,6 +10,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
 
+// Register MongoDB
+builder.Services.AddSingleton<IMongoClient>(sp => new MongoClient("mongodb://mongodb:27017"));
+builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDatabase("video_db").GetCollection<VideoCache>("videos"));
+
 // Register RabbitMQ Connection as a Singleton so it stays connected and lists the publisher
 builder.Services.AddSingleton<IConnectionFactory>(sp => new ConnectionFactory { HostName = "rabbitmq" });
 builder.Services.AddSingleton<IConnection>(sp => 
@@ -16,6 +21,9 @@ builder.Services.AddSingleton<IConnection>(sp =>
     var factory = sp.GetRequiredService<IConnectionFactory>();
     return factory.CreateConnectionAsync().GetAwaiter().GetResult();
 });
+
+// Add Hosted Service to listen for cached videos
+builder.Services.AddHostedService<VideoCacheListener>();
 
 var app = builder.Build();
 
@@ -91,22 +99,95 @@ app.MapGet("/video", async (HttpContext context, IHttpClientFactory httpClientFa
     return EmptyHttpResult.Instance;
 });
 
-app.MapGet("/recent-videos", async () =>
+app.MapGet("/recent-videos", async (IMongoCollection<VideoCache> collection) =>
 {
-    // Connect to MongoDB
-    var mongoClient = new MongoClient("mongodb://mongodb:27017");
-    var database = mongoClient.GetDatabase("video_db"); // Connect to your designated database
-    var collection = database.GetCollection<BsonDocument>("videos");
-
-    // Fetch the 10 most recent videos sorting by ObjectId descending
-    var recentVideos = await collection.Find(new BsonDocument())
-        .Sort(Builders<BsonDocument>.Sort.Descending("_id"))
-        .Limit(10)
+    var recentVideos = await collection.Find(_ => true)
+        .SortByDescending(v => v.Id)
+        .Limit(12)
         .ToListAsync();
     
-    // Select to standard dictionary list to return as JSON
-    var json = recentVideos.Select(x => x.ToDictionary()).ToList();
-    return Results.Ok(json);
+    // Map to ViewModel for rendering
+    var dtos = recentVideos.Select(v => new {
+        id = v.VideoId,
+        title = v.Title,
+        thumbnailUrl = "",
+        channelName = "CuriosityHub User",
+        views = 0,
+        publishedAt = v.CachedAt.ToString("MMM dd, yyyy")
+    });
+
+    return Results.Ok(dtos);
 });
 
 app.Run();
+
+public class VideoCache
+{
+    [MongoDB.Bson.Serialization.Attributes.BsonId]
+    [MongoDB.Bson.Serialization.Attributes.BsonRepresentation(BsonType.ObjectId)]
+    public string Id { get; set; } = null!;
+    
+    public string VideoId { get; set; } = null!;
+    public string Title { get; set; } = string.Empty;
+    public DateTime CachedAt { get; set; }
+}
+
+public class VideoCacheEvent
+{
+    public string VideoId { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+}
+
+public class VideoCacheListener : BackgroundService
+{
+    private readonly IServiceProvider _serviceProvider;
+
+    public VideoCacheListener(IServiceProvider serviceProvider)
+    {
+        _serviceProvider = serviceProvider;
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var factory = new ConnectionFactory { HostName = "rabbitmq" };
+        using var connection = await factory.CreateConnectionAsync(stoppingToken);
+        using var channel = await connection.CreateChannelAsync(cancellationToken: stoppingToken);
+
+        // Step 6: video streaming listens to the video upload (successful upload event)
+        await channel.QueueDeclareAsync(queue: "video_uploaded", durable: true, exclusive: false, autoDelete: false, arguments: null, cancellationToken: stoppingToken);
+
+        var consumer = new AsyncEventingBasicConsumer(channel);
+        consumer.ReceivedAsync += async (sender, ea) =>
+        {
+            var body = ea.Body.ToArray();
+            var message = Encoding.UTF8.GetString(body);
+            
+            try
+            {
+                var evt = JsonSerializer.Deserialize<VideoCacheEvent>(message, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (evt != null && !string.IsNullOrEmpty(evt.VideoId))
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var collection = scope.ServiceProvider.GetRequiredService<IMongoCollection<VideoCache>>();
+                    
+                    var entry = new VideoCache 
+                    {
+                        Id = ObjectId.GenerateNewId().ToString(),
+                        VideoId = evt.VideoId,
+                        Title = evt.Title,
+                        CachedAt = DateTime.UtcNow
+                    };
+                    
+                    // Upsert to be safe
+                    await collection.ReplaceOneAsync(x => x.VideoId == evt.VideoId, entry, new ReplaceOptions { IsUpsert = true }, cancellationToken: stoppingToken);
+                }
+            }
+            catch { /* Ignore parsing/insert errors for resilience */ }
+        };
+
+        await channel.BasicConsumeAsync(queue: "video_uploaded", autoAck: true, consumer: consumer, cancellationToken: stoppingToken);
+        
+        // Wait until cancellation is requested
+        await Task.Delay(Timeout.Infinite, stoppingToken);
+    }
+}
