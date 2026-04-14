@@ -3,6 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { fetchVideoDetails, fetchVideoStreamBlobUrl } from '../apis/VideoService'
 import { fetchComments, fetchReplies, postComment, type Comment, type CreateCommentRequest } from '../apis/CommentService'
+import CommentPost from '../components/CommentPost.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,14 +18,10 @@ const videoError = ref<string | null>(null)
 const showFullDescription = ref(false)
 
 const comments = ref<(Comment & { replies?: Comment[], showReplies?: boolean, isLoadingReplies?: boolean })[]>([])
-const newCommentText = ref('')
 const isPostingComment = ref(false)
 const commentError = ref<string | null>(null)
 
 const commentCharLimit = 1000
-const isCommentValid = computed(() => {
-  return newCommentText.value.trim().length > 0 && newCommentText.value.length <= commentCharLimit
-})
 
 // For cleanup of Object URL to prevent memory leaks
 onUnmounted(() => {
@@ -83,8 +80,8 @@ const toggleReplies = async (comment: any) => {
   comment.showReplies = true
 }
 
-const submitComment = async () => {
-  if (!isCommentValid.value) return
+const submitComment = async (text: string) => {
+  if (!text) return
 
   isPostingComment.value = true
   commentError.value = null
@@ -92,7 +89,7 @@ const submitComment = async () => {
   try {
     const req: CreateCommentRequest = {
       user: 'AnonymousUser', // Replace with real user if authentication exists
-      comment: newCommentText.value.trim(),
+      comment: text,
       parent_Comment: null,
       video_Id: videoId
     }
@@ -100,7 +97,6 @@ const submitComment = async () => {
     const postedMsg = await postComment(req)
     if (postedMsg) {
       comments.value.unshift({ ...postedMsg, showReplies: false })
-      newCommentText.value = ''
     } else {
       commentError.value = "Failed to post comment. Please try again."
     }
@@ -109,6 +105,51 @@ const submitComment = async () => {
     console.error('Failed to post comment:', err)
   } finally {
     isPostingComment.value = false
+  }
+}
+
+// Reply functionalties
+const activeReplyCommentId = ref<string | null>(null)
+const isPostingReply = ref(false)
+const replyError = ref<string | null>(null)
+
+const openReplyInput = (commentId: string) => {
+  activeReplyCommentId.value = activeReplyCommentId.value === commentId ? null : commentId
+  replyError.value = null
+}
+
+const submitReply = async (parentComment: any, text: string) => {
+  if (!text) return
+
+  isPostingReply.value = true
+  replyError.value = null
+
+  try {
+    const req: CreateCommentRequest = {
+      user: 'AnonymousUser',
+      comment: text,
+      parent_Comment: parentComment.id,
+      video_Id: videoId
+    }
+
+    const postedMsg = await postComment(req)
+    if (postedMsg) {
+      // If replies aren't loaded yet, just mark as having replies and optionally load them
+      if (!parentComment.replies) {
+        parentComment.replies = []
+      }
+      parentComment.replies.push(postedMsg)
+      parentComment.nested = true
+      parentComment.showReplies = true
+      activeReplyCommentId.value = null
+    } else {
+      replyError.value = "Failed to post reply. Please try again."
+    }
+  } catch (err) {
+    replyError.value = "A network error occurred while posting your reply."
+    console.error('Failed to post reply:', err)
+  } finally {
+    isPostingReply.value = false
   }
 }
 
@@ -161,14 +202,7 @@ const formatDate = (dateString: string) => {
               <span>{{ videoData?.views?.count || '0' }} views</span>
               <span>{{ videoData?.metadata?.publishedAt || 'Unknown Date' }}</span>
             </div>
-            <div class="flex gap-2">
-              <button class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-full flex items-center gap-2 transition-colors">
-                <span class="text-sm">Like</span>
-              </button>
-              <button class="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 rounded-full flex items-center gap-2 transition-colors">
-                <span class="text-sm">Share</span>
-              </button>
-            </div>
+            <!-- Removed Likes and Shares -->
           </div>
           <div class="bg-neutral-900 p-4 rounded-xl text-sm leading-relaxed text-neutral-300">
             <div :class="{'line-clamp-2': !showFullDescription}">
@@ -187,37 +221,12 @@ const formatDate = (dateString: string) => {
           <div class="mt-8 border-t border-neutral-800 pt-6">
             <h3 class="text-xl font-semibold mb-4">{{ comments.length }} Comments</h3>
             
-            <div class="flex gap-4 mb-8">
-              <div class="w-10 h-10 rounded-full bg-neutral-700 flex-shrink-0"></div>
-              <div class="flex-grow">
-                <textarea 
-                  class="w-full bg-transparent border-b border-neutral-700 focus:border-blue-500 outline-none resize-none py-1 text-sm text-neutral-200 placeholder-neutral-500" 
-                  rows="2" 
-                  v-model="newCommentText"
-                  :maxlength="commentCharLimit"
-                  placeholder="Add a public comment..."
-                  :disabled="isPostingComment"
-                ></textarea>
-                <div class="flex justify-between items-center mt-2">
-                  <span class="text-xs" :class="newCommentText.length > commentCharLimit - 100 ? 'text-red-400' : 'text-neutral-500'">
-                    {{ newCommentText.length }} / {{ commentCharLimit }}
-                  </span>
-                  <div class="flex items-center gap-3">
-                    <span v-if="commentError" class="text-xs text-red-500 font-medium">{{ commentError }}</span>
-                    <button 
-                      @click="submitComment"
-                      :disabled="!isCommentValid || isPostingComment"
-                      class="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-sm font-medium rounded-full cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <span v-if="isPostingComment" class="flex items-center gap-2">
-                        <div class="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                        Posting...
-                      </span>
-                      <span v-else>Comment</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
+            <div class="mb-8">
+              <CommentPost 
+                :isPosting="isPostingComment"
+                :error="commentError"
+                @submit="submitComment"
+              />
             </div>
 
             <!-- Dynamic Comments -->
@@ -234,12 +243,24 @@ const formatDate = (dateString: string) => {
                       {{ comment.text }}
                     </p>
                     <div class="flex items-center gap-4 mt-2 text-neutral-400">
-                      <button class="hover:text-blue-400"><span class="text-xs font-medium">Like</span></button>
-                      <button class="hover:text-blue-400"><span class="text-xs font-medium">Reply</span></button>
+                      <!-- Removed Like -->
+                      <button class="hover:text-blue-400" @click="openReplyInput(comment.id)"><span class="text-xs font-medium">Reply</span></button>
                     </div>
                     
-                    <!-- View Replies Button -->
-                    <div class="mt-2 text-blue-400 hover:text-blue-300 text-sm font-medium cursor-pointer" @click="toggleReplies(comment)">
+                    <!-- Reply Input -->
+                    <div v-if="activeReplyCommentId === comment.id" class="mt-4 ml-8">
+                      <CommentPost 
+                        :isPosting="isPostingReply"
+                        :error="replyError"
+                        placeholder="Add a reply..."
+                        buttonText="Reply"
+                        @submit="(text) => submitReply(comment, text)"
+                        @cancel="activeReplyCommentId = null"
+                      />
+                    </div>
+
+                    <!-- View Replies Button block conditioned on nested -->
+                    <div v-if="comment.nested" class="mt-2 text-blue-400 hover:text-blue-300 text-sm font-medium cursor-pointer" @click="toggleReplies(comment)">
                       <div v-if="comment.isLoadingReplies" class="flex gap-2 items-center text-neutral-400">
                         <div class="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
                         <span>Loading...</span>

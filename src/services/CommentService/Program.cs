@@ -35,10 +35,19 @@ app.MapPost("/comment", async ([FromBody] CreateCommentRequest request, [FromSer
         Text = request.Comment,
         ParentCommentId = request.Parent_Comment,
         VideoId = request.Video_Id,
-        CreatedAt = DateTime.UtcNow
+        CreatedAt = DateTime.UtcNow,
+        Nested = false
     };
 
     await commentsCollection.InsertOneAsync(comment);
+
+    // If this is a reply, update the parent's Nested property to true
+    if (!string.IsNullOrEmpty(request.Parent_Comment))
+    {
+        var update = Builders<Comment>.Update.Set(c => c.Nested, true);
+        await commentsCollection.UpdateOneAsync(c => c.Id == request.Parent_Comment, update);
+    }
+
     return Results.Created($"/comment/{comment.Id}", comment);
 });
 
@@ -84,6 +93,8 @@ public class Comment
     public string VideoId { get; set; } = string.Empty;
     
     public DateTime CreatedAt { get; set; }
+    
+    public bool Nested { get; set; } = false;
 }
 
 public class CreateCommentRequest

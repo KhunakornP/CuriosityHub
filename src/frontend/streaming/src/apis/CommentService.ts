@@ -5,6 +5,7 @@ export interface Comment {
   parentCommentId: string | null
   videoId: string
   createdAt: string
+  nested?: boolean
 }
 
 export interface CreateCommentRequest {
