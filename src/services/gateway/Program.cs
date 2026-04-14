@@ -119,20 +119,31 @@ app.MapGet("/video-details", async ([FromHeader] string videoId, IHttpClientFact
 });
 
 // 4. POST /upload
-app.MapPost("/upload", async (HttpRequest req, IHttpClientFactory clientFactory) =>
+app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? description, IFormFile video, IHttpClientFactory clientFactory) =>
 {
     var client = clientFactory.CreateClient("VideoUpload");
+    
+    using var content = new MultipartFormDataContent();
+    content.Add(new StringContent(title), "title");
+    if (!string.IsNullOrEmpty(description))
+    {
+        content.Add(new StringContent(description), "description");
+    }
+    
+    using var videoStream = video.OpenReadStream();
+    var videoContent = new StreamContent(videoStream);
+    videoContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(video.ContentType);
+    content.Add(videoContent, "video", video.FileName);
+
     var request = new HttpRequestMessage(HttpMethod.Post, "/upload")
     {
-        Content = new StreamContent(req.Body)
+        Content = content
     };
-    if (req.ContentType != null)
-        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(req.ContentType);
 
     var response = await client.SendAsync(request);
-    var content = await response.Content.ReadAsStringAsync();
-    return Results.Content(content, response.Content.Headers.ContentType?.ToString() ?? "application/json", null, (int)response.StatusCode);
-});
+    var responseContent = await response.Content.ReadAsStringAsync();
+    return Results.Content(responseContent, response.Content.Headers.ContentType?.ToString() ?? "application/json", null, (int)response.StatusCode);
+}).DisableAntiforgery();
 
 // 5. POST /comment
 app.MapPost("/comment", async (HttpRequest req, IHttpClientFactory clientFactory) =>
