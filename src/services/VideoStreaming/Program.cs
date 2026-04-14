@@ -11,7 +11,8 @@ builder.Services.AddOpenApi();
 builder.Services.AddHttpClient();
 
 // Register MongoDB
-builder.Services.AddSingleton<IMongoClient>(sp => new MongoClient("mongodb://mongodb:27017"));
+var connectionString = builder.Configuration.GetConnectionString("MongoDb") ?? "mongodb://mongodb:27017";
+builder.Services.AddSingleton<IMongoClient>(sp => new MongoClient(connectionString));
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IMongoClient>().GetDatabase("video_db").GetCollection<VideoCache>("videos"));
 
 // Register RabbitMQ Connection as a Singleton so it stays connected and lists the publisher
