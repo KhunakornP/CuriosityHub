@@ -19,6 +19,7 @@ services:
       - video-metadata
       - video-views
       - video-upload-queue
+      - comment-service
 
   video-storage:
     build:
@@ -94,6 +95,19 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+
+  comment-service:
+    build:
+      context: ./services/CommentService
+      dockerfile: Dockerfile
+    ports:
+      - "8085:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__MongoDB=mongodb://mongodb:27017
+    depends_on:
+      mongodb:
+        condition: service_started
 
   rabbitmq:
     image: rabbitmq:3-management
