@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
@@ -46,6 +47,23 @@ app.MapGet("/views", async (string videoId, IMongoCollection<VideoViewCount> col
     return Results.Ok(new { videoId = videoId, totalViews = video?.TotalViews ?? 0 });
 })
 .WithName("GetVideoViews");
+
+app.MapGet("/video-views", async ([FromQuery] string[] videoIds, IMongoCollection<VideoViewCount> collection) =>
+{
+    if (videoIds == null || !videoIds.Any())
+        return Results.BadRequest("videoIds is required");
+
+    var filter = Builders<VideoViewCount>.Filter.In(v => v.VideoId, videoIds);
+    var viewsList = await collection.Find(filter).ToListAsync();
+    
+    var response = videoIds.Select(id => 
+    {
+        var viewCount = viewsList.FirstOrDefault(v => v.VideoId == id);
+        return new { videoId = id, totalViews = viewCount?.TotalViews ?? 0 };
+    });
+    
+    return Results.Ok(response);
+});
 
 app.Run();
 

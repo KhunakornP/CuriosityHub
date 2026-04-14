@@ -1,23 +1,49 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { fetchVideos as apiFetchVideos, updateVideoMetadata, deleteVideo as apiDeleteVideo } from '../../apis/VideoService';
 
 interface Video {
   id: string;
   title: string;
-  videoFileUrl: string;
+  videoId: string;
   description: string;
   owner: string;
   uploadedAt: string;
+  views: number;
   _isDirty?: boolean;
 }
 
-const videos = ref<Video[]>([
-  { id: 'v1', title: 'Vue Tutorial', videoFileUrl: 'https://example.com/vue-intro.mp4', description: 'Vue basics', owner: 'admin_master', uploadedAt: '2025-01-01' },
-  { id: 'v2', title: 'React Guide', videoFileUrl: 'https://example.com/react-adv.mp4', description: 'React advanced', owner: 'john_doe', uploadedAt: '2025-01-02' },
-  { id: 'v3', title: 'Angular Basics', videoFileUrl: 'https://example.com/angular.mp4', description: 'Angular intro', owner: 'moderator_x', uploadedAt: '2025-01-05' },
-]);
-
+const videos = ref<Video[]>([]);
 const loading = ref(false);
+
+const currentPage = ref(1);
+const pageSize = ref(10);
+
+async function fetchVideos() {
+  loading.value = true;
+  try {
+    const data = await apiFetchVideos(currentPage.value, pageSize.value);
+    
+    videos.value = data.map((item: any) => ({
+      id: item.videoId || item.id,
+      title: item.title,
+      description: item.description,
+      videoId: item.videoId,
+      owner: 'Publisher',
+      uploadedAt: new Date().toISOString(),
+      views: item.views,
+      _isDirty: false
+    }));
+  } catch (error) {
+    console.error('Failed to load videos', error);
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(() => {
+  fetchVideos();
+});
 
 function markDirty(video: Video) {
   video._isDirty = true;
@@ -25,15 +51,28 @@ function markDirty(video: Video) {
 
 const hasDirty = computed(() => videos.value.some(v => v._isDirty));
 
-function saveChanges() {
+async function saveChanges() {
   const dirtyVideos = videos.value.filter(v => v._isDirty);
-  alert(`Saved changes for ${dirtyVideos.length} videos`);
-  dirtyVideos.forEach(v => v._isDirty = false);
+  try {
+    await Promise.all(dirtyVideos.map(v => 
+      updateVideoMetadata(v.id, v.title, v.description)
+    ));
+    alert(`Saved changes for ${dirtyVideos.length} videos`);
+    dirtyVideos.forEach(v => v._isDirty = false);
+  } catch (error) {
+    alert('Failed to save some changes: ' + error);
+  }
 }
 
-function deleteVideo(video: Video) {
+async function deleteVideo(video: Video) {
   if (confirm(`Delete video ${video.title}?`)) {
-    videos.value = videos.value.filter(v => v.id !== video.id);
+    try {
+      const success = await apiDeleteVideo(video.id);
+      if (!success) throw new Error('Delete failed');
+      videos.value = videos.value.filter(v => v.id !== video.id);
+    } catch (error) {
+      alert('Failed to delete video: ' + error);
+    }
   }
 }
 </script>
@@ -57,9 +96,10 @@ function deleteVideo(video: Video) {
           <tr>
             <th scope="col" class="w-8 px-4 py-3 text-center"></th>
             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Video File (URL)</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Video ID</th>
             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Owner</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Views</th>
             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Uploaded</th>
             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
           </tr>
@@ -72,14 +112,15 @@ function deleteVideo(video: Video) {
             <td class="px-6 py-4 whitespace-nowrap">
               <input type="text" v-model="video.title" @input="markDirty(video)" class="w-full bg-transparent border-b border-transparent focus:border-blue-500 focus:outline-none text-sm font-medium text-gray-900 px-1 py-1" />
             </td>
-            <td class="px-6 py-4 whitespace-nowrap">
-              <input type="text" v-model="video.videoFileUrl" @input="markDirty(video)" class="w-full bg-transparent border-b border-transparent focus:border-blue-500 focus:outline-none text-sm text-gray-600 px-1 py-1" />
+            <td class="px-6 py-4 whitespace-nowrap truncate max-w-xs text-sm text-gray-600">
+              {{ video.videoId }}
             </td>
             <td class="px-6 py-4">
               <input type="text" v-model="video.description" @input="markDirty(video)" class="w-full bg-transparent border-b border-transparent focus:border-blue-500 focus:outline-none text-sm text-gray-600 px-1 py-1 min-w-[200px] truncate" />
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 cursor-not-allowed select-none">{{ video.owner }}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 select-none">{{ video.uploadedAt }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 cursor-not-allowed select-none">{{ video.views }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400 select-none">{{ new Date(video.uploadedAt).toLocaleDateString() }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
               <button @click="deleteVideo(video)" class="text-red-500 hover:text-red-700 transition" title="Delete Video">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -4,6 +4,11 @@ using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
+});
+
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
@@ -117,7 +122,29 @@ app.MapDelete("/video", (HttpContext context) =>
 
     File.Delete(filePath);
 
-    return Results.Ok(new { Message = "Video deleted successfully" });
+    return Results.Ok(new MessageResponse { Message = "Video deleted successfully" });
+});
+
+app.MapGet("/video-list", ([FromQuery] int page = 1, [FromQuery] int pageSize = 10) =>
+{
+    var files = Directory.GetFiles(videoDirectory, "*.mp4")
+                         .Select(Path.GetFileNameWithoutExtension)
+                         .Where(name => !string.IsNullOrEmpty(name))
+                         .Skip((page - 1) * pageSize)
+                         .Take(pageSize)
+                         .ToList();
+    return Results.Ok(files);
 });
 
 app.Run();
+
+[JsonSerializable(typeof(List<string>))]
+[JsonSerializable(typeof(MessageResponse))]
+public partial class AppJsonSerializerContext : JsonSerializerContext
+{
+}
+
+public class MessageResponse
+{
+    public string Message { get; set; } = string.Empty;
+}

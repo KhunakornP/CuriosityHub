@@ -111,6 +111,20 @@ app.MapDelete("/delete", async ([FromQuery] string commentId, CommentDbContext d
     return Results.Ok(new { message = "Comment deleted successfully. All replies gracefully cascaded." });
 });
 
+app.MapGet("/all", async ([FromQuery] int page, [FromQuery] int pageSize, CommentDbContext db) => 
+{
+    int safePage = page > 0 ? page : 1;
+    int safePageSize = pageSize > 0 ? pageSize : 10;
+    
+    var comments = await db.Comments
+        .OrderByDescending(c => c.CreatedAt)
+        .Skip((safePage - 1) * safePageSize)
+        .Take(safePageSize)
+        .ToListAsync();
+        
+    return Results.Ok(comments);
+});
+
 app.Run();
 
 public class CommentDbContext : DbContext

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { fetchComments as apiFetchComments, updateComment as apiUpdateComment, deleteComment as apiDeleteComment } from '../../apis/CommentService';
 
 interface Comment {
   id: string;
@@ -11,14 +12,37 @@ interface Comment {
   _isDirty?: boolean;
 }
 
-const comments = ref<Comment[]>([
-  { id: 'c1', author: 'john_doe', videoId: 'v1', parentCommentId: null, content: 'Great tutorial!', postedAt: '2025-01-01 10:00' },
-  { id: 'c2', author: 'spam_bot', videoId: 'v1', parentCommentId: 'c1', content: 'Buy cheap watches here!', postedAt: '2025-01-02 14:20' },
-  { id: 'c3', author: 'moderator_x', videoId: 'v2', parentCommentId: null, content: 'Thanks for the guide.', postedAt: '2025-01-03 09:15' },
-]);
-
+const comments = ref<Comment[]>([]);
 const loading = ref(false);
 const filterBy = ref<'all' | 'videoId' | 'parentCommentId'>('all');
+
+const currentPage = ref(1);
+const pageSize = ref(100); // Higher page size for grouped views right now
+
+async function fetchComments() {
+  loading.value = true;
+  try {
+    const data = await apiFetchComments(currentPage.value, pageSize.value);
+    
+    comments.value = data.map((item: any) => ({
+      id: item.id,
+      author: item.userId || 'Unknown',
+      videoId: item.videoId,
+      parentCommentId: item.parentCommentId,
+      content: item.text,
+      postedAt: new Date(item.createdAt).toLocaleString(),
+      _isDirty: false
+    }));
+  } catch (error) {
+    console.error('Failed to load comments', error);
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(() => {
+  fetchComments();
+});
 
 const groupedComments = computed(() => {
   if (filterBy.value === 'all') return { 'All Comments': comments.value };
@@ -38,15 +62,28 @@ function markDirty(comment: Comment) {
 
 const hasDirty = computed(() => comments.value.some(c => c._isDirty));
 
-function saveChanges() {
+async function saveChanges() {
   const dirtyComments = comments.value.filter(c => c._isDirty);
-  alert(`Saved changes for ${dirtyComments.length} comments`);
-  dirtyComments.forEach(c => c._isDirty = false);
+  try {
+    await Promise.all(dirtyComments.map(c => 
+      apiUpdateComment(c.id, c.content)
+    ));
+    alert(`Saved changes for ${dirtyComments.length} comments`);
+    dirtyComments.forEach(c => c._isDirty = false);
+  } catch (error) {
+    alert('Failed to save some comments: ' + error);
+  }
 }
 
-function deleteComment(comment: Comment) {
+async function deleteComment(comment: Comment) {
   if (confirm(`Delete comment ${comment.id}?`)) {
-    comments.value = comments.value.filter(c => c.id !== comment.id);
+    try {
+      const success = await apiDeleteComment(comment.id);
+      if (!success) throw new Error('Delete failed');
+      comments.value = comments.value.filter(c => c.id !== comment.id);
+    } catch (error) {
+      alert('Failed to delete comment: ' + error);
+    }
   }
 }
 </script>

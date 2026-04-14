@@ -37,12 +37,17 @@ builder.Services.AddHttpClient("CommentService", (sp, client) =>
     var urls = sp.GetRequiredService<IOptions<ServiceUrls>>().Value;
     client.BaseAddress = new Uri(urls.CommentService);
 });
+builder.Services.AddHttpClient("VideoStorage", (sp, client) => 
+{
+    var urls = sp.GetRequiredService<IOptions<ServiceUrls>>().Value;
+    client.BaseAddress = new Uri(urls.VideoStorage);
+});
 
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins("http://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials(); // Often needed for frontend frameworks
@@ -115,6 +120,76 @@ app.MapDelete("/comment", async ([FromQuery] string commentId, IHttpClientFactor
     return Results.Content(content, "application/json", null, (int)response.StatusCode);
 });
 
+// 5. Get comments paginate
+app.MapGet("/comments", async ([FromQuery] int page, [FromQuery] int pageSize, IHttpClientFactory clientFactory) =>
+{
+    var client = clientFactory.CreateClient("CommentService");
+    var response = await client.GetAsync($"/all?page={page}&pageSize={pageSize}");
+    var content = await response.Content.ReadAsStringAsync();
+    return Results.Content(content, "application/json", null, (int)response.StatusCode);
+});
+
+// 6. Get videos aggregate
+app.MapGet("/videos", async ([FromQuery] int page, [FromQuery] int pageSize, IHttpClientFactory clientFactory) =>
+{
+    var storageClient = clientFactory.CreateClient("VideoStorage");
+    var listResponse = await storageClient.GetAsync($"/video-list?page={page}&pageSize={pageSize}");
+    
+    if (!listResponse.IsSuccessStatusCode)
+    {
+         return Results.StatusCode((int)listResponse.StatusCode);
+    }
+    
+    var videoIds = await listResponse.Content.ReadFromJsonAsync<string[]>();
+    if (videoIds == null || !videoIds.Any())
+    {
+        return Results.Ok(new List<object>());
+    }
+
+    var metadataClient = clientFactory.CreateClient("VideoMetadata");
+    var viewsClient = clientFactory.CreateClient("VideoViews");
+
+    var queryParams = string.Join("&", videoIds.Select(id => $"videoIds={id}"));
+
+    var metaTask = metadataClient.GetAsync($"/video-metadatas?{queryParams}");
+    var viewsTask = viewsClient.GetAsync($"/video-views?{queryParams}");
+
+    await Task.WhenAll(metaTask, viewsTask);
+
+    var metaResponse = await metaTask;
+    var viewsResponse = await viewsTask;
+
+    var metaContent = metaResponse.IsSuccessStatusCode 
+        ? await metaResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement[]>() 
+        : Array.Empty<System.Text.Json.JsonElement>();
+
+    var viewsContent = viewsResponse.IsSuccessStatusCode 
+        ? await viewsResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement[]>() 
+        : Array.Empty<System.Text.Json.JsonElement>();
+
+    var results = videoIds.Select(id =>
+    {
+        var metadata = metaContent.FirstOrDefault(m => 
+            (m.TryGetProperty("videoId", out var prop) && prop.GetString() == id) ||
+            (m.TryGetProperty("VideoId", out var prop2) && prop2.GetString() == id));
+            
+        var views = viewsContent.FirstOrDefault(v => 
+            (v.TryGetProperty("videoId", out var prop) && prop.GetString() == id) || 
+            (v.TryGetProperty("VideoId", out var prop2) && prop2.GetString() == id));
+
+        return new
+        {
+            videoId = id,
+            title = metadata.ValueKind != System.Text.Json.JsonValueKind.Undefined && metadata.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : "Unknown",
+            description = metadata.ValueKind != System.Text.Json.JsonValueKind.Undefined && metadata.TryGetProperty("description", out var descProp) ? descProp.GetString() : "",
+            views = views.ValueKind != System.Text.Json.JsonValueKind.Undefined && views.TryGetProperty("views", out var viewsProp) ? viewsProp.GetInt32() : 0,
+            likes = views.ValueKind != System.Text.Json.JsonValueKind.Undefined && views.TryGetProperty("likes", out var likesProp) ? likesProp.GetInt32() : 0
+        };
+    });
+
+    return Results.Ok(results);
+});
+
 app.Run();
 
 public class ServiceUrls
@@ -124,4 +199,5 @@ public class ServiceUrls
     public string VideoViews { get; set; } = "http://localhost:5003";
     public string VideoUpload { get; set; } = "http://localhost:5004";
     public string CommentService { get; set; } = "http://localhost:5005";
+    public string VideoStorage { get; set; } = "http://localhost:8080";
 }
