@@ -100,20 +100,55 @@ app.MapGet("/video", async (HttpContext context, IHttpClientFactory httpClientFa
     return EmptyHttpResult.Instance;
 });
 
-app.MapGet("/recent-videos", async (IMongoCollection<VideoCache> collection) =>
+app.MapGet("/recent-videos", async (IMongoCollection<VideoCache> collection, IHttpClientFactory httpClientFactory) =>
 {
     var recentVideos = await collection.Find(_ => true)
         .SortByDescending(v => v.Id)
         .Limit(12)
         .ToListAsync();
     
+    // Fetch views for the recent videos
+    var videoIds = recentVideos.Select(v => v.VideoId).ToArray();
+    Dictionary<string, long> viewCounts = new();
+
+    if (videoIds.Length > 0)
+    {
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            var queryParams = string.Join("&", videoIds.Select(id => $"videoIds={id}"));
+            var response = await client.GetAsync($"http://video-views:8080/video-views?{queryParams}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var viewsData = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+                if (viewsData != null)
+                {
+                    foreach (var item in viewsData)
+                    {
+                        var vId = item.GetProperty("videoId").GetString();
+                        var count = item.GetProperty("totalViews").GetInt64();
+                        if (!string.IsNullOrEmpty(vId))
+                        {
+                            viewCounts[vId] = count;
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fallback to 0 views if the service is unreachable
+        }
+    }
+
     // Map to ViewModel for rendering
     var dtos = recentVideos.Select(v => new {
         id = v.VideoId,
         title = v.Title,
         thumbnailUrl = v.ThumbnailUrl,
-        channelName = v.PublisherName,
-        views = 0,
+        channelName = string.IsNullOrEmpty(v.PublisherName) ? "CuriosityHub User" : v.PublisherName,
+        views = viewCounts.TryGetValue(v.VideoId, out var vc) ? vc : 0,
         publishedAt = v.CachedAt.ToString("MMM dd, yyyy")
     });
 
@@ -210,8 +245,8 @@ public class VideoCacheListener : BackgroundService
                             if (identityResponse.IsSuccessStatusCode)
                             {
                                 var jsonDoc = await identityResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: stoppingToken);
-                                var firstName = jsonDoc.GetProperty("firstName").GetString() ?? "";
-                                var lastName = jsonDoc.GetProperty("lastName").GetString() ?? "";
+                                var firstName = jsonDoc.TryGetProperty("firstName", out var f) ? f.GetString() : "";
+                                var lastName = jsonDoc.TryGetProperty("lastName", out var l) ? l.GetString() : "";
                                 publisherName = $"{firstName} {lastName}".Trim();
                                 if (string.IsNullOrEmpty(publisherName)) publisherName = "CuriosityHub User";
                             }
