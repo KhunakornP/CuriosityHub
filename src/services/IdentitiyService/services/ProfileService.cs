@@ -23,6 +23,14 @@ public class ProfileService : IProfileService
         return profile != null ? new ProfileResponse(profile.UserId, profile.FirstName, profile.LastName, profile.Description, profile.ProfileUrl) : null;
     }
 
+    public async Task<ProfileResponse?> GetProfileByEmailAsync(string email)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user == null) return null;
+        var profile = await _context.Profiles.FirstOrDefaultAsync(p => p.UserId == user.Id);
+        return profile != null ? new ProfileResponse(profile.UserId, profile.FirstName, profile.LastName, profile.Description, profile.ProfileUrl) : null;
+    }
+
     public async Task<ProfileResponse?> UpdateProfileAsync(Guid userId, UpdateProfileReq request)
     {
         var profile = await _context.Profiles.FirstOrDefaultAsync(p => p.UserId == userId);

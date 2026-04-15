@@ -4,6 +4,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { fetchVideoDetails, fetchVideoStreamBlobUrl } from '../apis/VideoService'
 import { fetchComments, fetchReplies, postComment, type Comment, type CreateCommentRequest } from '../apis/CommentService'
 import CommentPost from '../components/CommentPost.vue'
+import { useAuthStore } from '../stores/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -87,8 +88,9 @@ const submitComment = async (text: string) => {
   commentError.value = null
 
   try {
+    const rootAuthStore = useAuthStore() // assuming imported or available, let's just make sure it's imported
     const req: CreateCommentRequest = {
-      user: 'AnonymousUser', // Replace with real user if authentication exists
+      user: rootAuthStore.userEmail || 'AnonymousUser',
       comment: text,
       parent_Comment: null,
       video_Id: videoId
@@ -125,8 +127,9 @@ const submitReply = async (parentComment: any, text: string) => {
   replyError.value = null
 
   try {
+    const rootAuthStore = useAuthStore()
     const req: CreateCommentRequest = {
-      user: 'AnonymousUser',
+      user: rootAuthStore.userEmail || 'AnonymousUser',
       comment: text,
       parent_Comment: parentComment.id,
       video_Id: videoId
@@ -161,15 +164,15 @@ const formatDate = (dateString: string) => {
 
 <template>
   <div class="min-h-screen bg-black text-white p-6 pt-4">
-    <header class="mb-4 flex justify-end items-center">
+    <header class="mb-4 flex justify-end items-center max-w-4xl mx-auto w-full px-4 lg:px-8">
       <button class="px-4 py-2 text-sm bg-neutral-800 rounded-full hover:bg-neutral-700 transition" @click="navigateToHome">
         Back to Home
       </button>
     </header>
 
-    <div class="flex flex-col lg:flex-row gap-6">
+    <div class="max-w-4xl mx-auto w-full px-4 lg:px-8">
       <!-- Main Video Area -->
-      <div class="lg:w-3/4 flex-grow">
+      <div class="w-full flex-grow">
         <!-- Error State For Video Fetch -->
         <div v-if="videoError" class="bg-red-900/20 border border-red-500/50 text-red-500 p-6 rounded-xl text-center mb-6">
           <svg class="w-12 h-12 mx-auto mb-3 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -233,10 +236,12 @@ const formatDate = (dateString: string) => {
             <div class="space-y-6">
               <div v-for="comment in comments" :key="comment.id" class="flex flex-col gap-2">
                 <div class="flex gap-4">
-                  <div class="w-10 h-10 rounded-full bg-neutral-800 flex-shrink-0"></div>
+                  <router-link :to="`/user/${comment.userId}`" class="w-10 h-10 rounded-full bg-indigo-600 flex-shrink-0 flex items-center justify-center font-bold text-white hover:bg-indigo-500 transition-colors cursor-pointer" :title="`View ${comment.userId}'s profile`">
+                    {{ comment.userId ? comment.userId.charAt(0).toUpperCase() : 'U' }}
+                  </router-link>
                   <div>
                     <div class="flex items-center gap-2 mb-1">
-                      <span class="text-sm font-semibold text-white">@{{ comment.userId }}</span>
+                      <router-link :to="`/user/${comment.userId}`" class="text-sm font-semibold text-white hover:text-blue-400 transition-colors">@{{ comment.userId }}</router-link>
                       <span class="text-xs text-neutral-500">{{ formatDate(comment.createdAt) }}</span>
                     </div>
                     <p class="text-sm text-neutral-300 break-words whitespace-pre-wrap">
@@ -273,10 +278,12 @@ const formatDate = (dateString: string) => {
                     <!-- Replies list -->
                     <div v-if="comment.showReplies && comment.replies && comment.replies.length > 0" class="mt-4 space-y-4 pl-4 border-l-2 border-neutral-800">
                       <div v-for="reply in comment.replies" :key="reply.id" class="flex gap-3">
-                        <div class="w-8 h-8 rounded-full bg-neutral-800 flex-shrink-0"></div>
+                        <router-link :to="`/user/${reply.userId}`" class="w-8 h-8 rounded-full bg-indigo-600 flex-shrink-0 flex items-center justify-center font-bold text-xs text-white hover:bg-indigo-500 transition-colors cursor-pointer" :title="`View ${reply.userId}'s profile`">
+                          {{ reply.userId ? reply.userId.charAt(0).toUpperCase() : 'U' }}
+                        </router-link>
                         <div>
                           <div class="flex items-center gap-2 mb-1">
-                            <span class="text-sm font-semibold text-white">@{{ reply.userId }}</span>
+                            <router-link :to="`/user/${reply.userId}`" class="text-sm font-semibold text-white hover:text-blue-400 transition-colors">@{{ reply.userId }}</router-link>
                             <span class="text-xs text-neutral-500">{{ formatDate(reply.createdAt) }}</span>
                           </div>
                           <p class="text-xs text-neutral-300 break-words whitespace-pre-wrap">
@@ -292,24 +299,6 @@ const formatDate = (dateString: string) => {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Side Recommendations Panel -->
-      <div class="lg:w-1/4 flex-shrink-0 flex flex-col gap-4">
-        <h3 class="font-semibold text-lg border-b border-neutral-800 pb-2">Up Next</h3>
-        
-        <div v-for="i in 5" :key="i" class="flex gap-2 group cursor-pointer">
-          <div class="w-40 aspect-video bg-neutral-800 rounded-lg flex-shrink-0 relative overflow-hidden group-hover:scale-105 transition-transform duration-200">
-             <!-- Thumbnail Placeholder -->
-          </div>
-          <div class="flex flex-col py-1">
-            <h4 class="text-sm font-semibold line-clamp-2 leading-tight group-hover:text-blue-400">
-              Recommended Video Title {{ i }}
-            </h4>
-            <p class="text-xs text-neutral-400 mt-1">Channel {{ i }}</p>
-            <p class="text-xs text-neutral-500">500K views</p>
           </div>
         </div>
       </div>

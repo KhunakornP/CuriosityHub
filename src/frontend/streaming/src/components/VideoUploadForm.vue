@@ -23,6 +23,42 @@ const handleFileChange = (event: Event) => {
   }
 }
 
+const generateThumbnail = async (file: File): Promise<Blob | null> => {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.src = URL.createObjectURL(file)
+    video.crossOrigin = 'anonymous'
+    
+    video.onloadeddata = () => {
+      // Seek to 1 second in or the start of the video
+      video.currentTime = Math.min(1, video.duration || 0)
+    }
+
+    video.onseeked = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      const ctx = canvas.getContext('2d')
+      
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(video.src)
+          resolve(blob)
+        }, 'image/jpeg', 0.8)
+      } else {
+        URL.revokeObjectURL(video.src)
+        resolve(null)
+      }
+    }
+
+    video.onerror = () => {
+      URL.revokeObjectURL(video.src)
+      resolve(null)
+    }
+  })
+}
+
 const submitUpload = async () => {
   if (!title.value.trim() || !selectedFile.value) {
     emit('upload-error', 'Title and video file are required.')
@@ -40,6 +76,11 @@ const submitUpload = async () => {
   formData.append('video', selectedFile.value)
 
   try {
+    const thumbnailBlob = await generateThumbnail(selectedFile.value)
+    if (thumbnailBlob) {
+      formData.append('thumbnail', thumbnailBlob, 'thumbnail.jpg')
+    }
+
     const success = await uploadVideo(formData)
     
     if (success) {

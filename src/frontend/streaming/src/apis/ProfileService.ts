@@ -1,9 +1,9 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export const ProfileService = {
-  async getProfile(token: string, targetUserId?: string) {
-    const url = targetUserId 
-      ? `${API_URL}/profile?targetUserId=${targetUserId}`
+  async getProfile(token: string, targetId?: string) {
+    const url = targetId 
+      ? `${API_URL}/profile?targetId=${encodeURIComponent(targetId)}`
       : `${API_URL}/profile`;
 
     const res = await fetch(url, {

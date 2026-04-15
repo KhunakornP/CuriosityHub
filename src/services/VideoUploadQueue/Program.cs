@@ -34,7 +34,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? description, IFormFile video, IHttpClientFactory httpClientFactory, IConnection rabbitConnection, SagaTracker tracker) =>
+app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? description, IFormFile video, IFormFile? thumbnail, IHttpClientFactory httpClientFactory, IConnection rabbitConnection, SagaTracker tracker) =>
 {
     if (video == null || video.Length == 0) return Results.BadRequest("No video provided.");
     if (string.IsNullOrWhiteSpace(title)) return Results.BadRequest("Title is required.");
@@ -48,6 +48,13 @@ app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? descri
     using var client = httpClientFactory.CreateClient();
 
     // Step 1: Upload to Storage (Mediator start)
+    using var stream = video.OpenReadStream();
+    using var content = new StreamContent(stream);
+    var request = new HttpRequestMessage(HttpMethod.Post, videoStorageUrl)
+    {
+        Content = content
+    };
+    request.Headers.Add("VideoId", videoId);
     using var streamContent = new StreamContent(video.OpenReadStream());
     streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(video.ContentType);
     
@@ -60,6 +67,25 @@ app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? descri
     {
         tracker.Sagas.TryRemove(videoId, out _);
         return Results.StatusCode(500); // Fail fast
+    }
+
+    // Step 1b: Upload Thumbnail to Storage
+    if (thumbnail != null && thumbnail.Length > 0)
+    {
+        var thumbnailUrl = "http://video-storage:8080/thumbnail";
+        using var thumbStreamContent = new StreamContent(thumbnail.OpenReadStream());
+        thumbStreamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(thumbnail.ContentType);
+
+        using var thumbStorageRequest = new HttpRequestMessage(HttpMethod.Post, thumbnailUrl);
+        thumbStorageRequest.Headers.Add("VideoId", videoId);
+        thumbStorageRequest.Content = thumbStreamContent;
+
+        var thumbResponse = await client.SendAsync(thumbStorageRequest);
+        if (!thumbResponse.IsSuccessStatusCode)
+        {
+            app.Logger.LogWarning($"Failed to upload thumbnail for video {videoId}");
+            // Non-fatal, continuing saga
+        }
     }
 
     // Step 2: Publish Events to independent queues

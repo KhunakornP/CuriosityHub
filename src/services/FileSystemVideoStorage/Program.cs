@@ -25,6 +25,12 @@ if (!Directory.Exists(videoDirectory))
     Directory.CreateDirectory(videoDirectory);
 }
 
+string thumbnailDirectory = Path.Combine(Directory.GetCurrentDirectory(), "thumbnails");
+if (!Directory.Exists(thumbnailDirectory))
+{
+    Directory.CreateDirectory(thumbnailDirectory);
+}
+
 app.MapGet("/video", async (HttpContext context) =>
 {
     if (!context.Request.Headers.TryGetValue("videoId", out var videoIdStr) || string.IsNullOrWhiteSpace(videoIdStr))
@@ -104,6 +110,83 @@ app.MapPut("/video", async (HttpContext context) =>
     }
 });
 
+app.MapPost("/thumbnail", async (HttpContext context) =>
+{
+    if (!context.Request.Headers.TryGetValue("videoId", out var videoIdStr) || string.IsNullOrWhiteSpace(videoIdStr))
+    {
+        return Results.BadRequest("Missing or invalid videoId header");
+    }
+
+    var videoId = videoIdStr.ToString();
+    var filePath = Path.Combine(thumbnailDirectory, $"{videoId}.jpg");
+
+    if (File.Exists(filePath))
+    {
+        return Results.Conflict("Thumbnail with this VideoId already exists.");
+    }
+
+    try
+    {
+        using var fileStream = new FileStream(filePath, FileMode.CreateNew);
+        await context.Request.Body.CopyToAsync(fileStream);
+        return Results.Ok($"Thumbnail {videoId} successfully saved.");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine("Thumbnail upload failed.");
+        Console.Error.WriteLine(ex.ToString());
+        return Results.StatusCode(500);
+    }
+});
+
+app.MapPut("/thumbnail", async (HttpContext context) =>
+{
+    if (!context.Request.Headers.TryGetValue("videoId", out var videoIdStr) || string.IsNullOrWhiteSpace(videoIdStr))
+    {
+        return Results.BadRequest("Missing or invalid videoId header");
+    }
+
+    var videoId = videoIdStr.ToString();
+    var filePath = Path.Combine(thumbnailDirectory, $"{videoId}.jpg");
+
+    if (!File.Exists(filePath))
+    {
+        return Results.NotFound($"Thumbnail with ID {videoId} does not exist. Use POST to create it.");
+    }
+
+    try
+    {
+        using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+        await context.Request.Body.CopyToAsync(fileStream);
+        return Results.Ok($"Thumbnail {videoId} successfully updated.");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine("Thumbnail update failed.");
+        Console.Error.WriteLine(ex.ToString());
+        return Results.StatusCode(500);
+    }
+});
+
+app.MapGet("/thumbnail", async (HttpContext context) =>
+{
+    if (!context.Request.Headers.TryGetValue("videoId", out var videoIdStr) || string.IsNullOrWhiteSpace(videoIdStr))
+    {
+        return Results.BadRequest("Missing or invalid videoId header");
+    }
+
+    var videoId = videoIdStr.ToString();
+    var filePath = Path.Combine(thumbnailDirectory, $"{videoId}.jpg");
+
+    if (!File.Exists(filePath))
+    {
+        return Results.NotFound("Thumbnail not found");
+    }
+
+    var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+    return Results.File(fileStream, "image/jpeg");
+});
+
 
 app.MapDelete("/video", (HttpContext context) =>
 {
@@ -114,6 +197,7 @@ app.MapDelete("/video", (HttpContext context) =>
 
     var videoId = videoIdStr.ToString();
     var filePath = Path.Combine(videoDirectory, $"{videoId}.mp4");
+    var thumbnailPath = Path.Combine(thumbnailDirectory, $"{videoId}.jpg");
 
     if (!File.Exists(filePath))
     {
@@ -122,7 +206,12 @@ app.MapDelete("/video", (HttpContext context) =>
 
     File.Delete(filePath);
 
-    return Results.Ok(new MessageResponse { Message = "Video deleted successfully" });
+    if (File.Exists(thumbnailPath))
+    {
+        File.Delete(thumbnailPath);
+    }
+
+    return Results.Ok(new MessageResponse { Message = "Video and thumbnails deleted successfully" });
 });
 
 app.MapGet("/video-list", ([FromQuery] int page = 1, [FromQuery] int pageSize = 10) =>

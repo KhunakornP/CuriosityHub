@@ -6,6 +6,7 @@ import VideoUploadPage from '../pages/VideoUploadPage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import RegisterPage from '../pages/RegisterPage.vue'
 import ProfilePage from '../pages/ProfilePage.vue'
+import PublicProfilePage from '../pages/PublicProfilePage.vue'
 import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
@@ -48,6 +49,12 @@ const router = createRouter({
       path: '/profile',
       name: 'profile',
       component: ProfilePage,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/user/:id',
+      name: 'userProfile',
+      component: PublicProfilePage,
       meta: { requiresAuth: true }
     }
   ],

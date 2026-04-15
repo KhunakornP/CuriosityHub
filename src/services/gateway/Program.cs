@@ -124,7 +124,7 @@ app.MapGet("/video-details", async ([FromHeader] string videoId, IHttpClientFact
 });
 
 // 4. POST /upload
-app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? description, IFormFile video, IHttpClientFactory clientFactory) =>
+app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? description, IFormFile video, IFormFile? thumbnail, IHttpClientFactory clientFactory) =>
 {
     var client = clientFactory.CreateClient("VideoUpload");
     
@@ -140,6 +140,14 @@ app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? descri
     videoContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(video.ContentType);
     content.Add(videoContent, "video", video.FileName);
 
+    if (thumbnail != null)
+    {
+        using var thumbnailStream = thumbnail.OpenReadStream();
+        var thumbnailContent = new StreamContent(thumbnailStream);
+        thumbnailContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(thumbnail.ContentType);
+        content.Add(thumbnailContent, "thumbnail", thumbnail.FileName);
+    }
+
     var request = new HttpRequestMessage(HttpMethod.Post, "/upload")
     {
         Content = content
@@ -149,6 +157,21 @@ app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? descri
     var responseContent = await response.Content.ReadAsStringAsync();
     return Results.Content(responseContent, response.Content.Headers.ContentType?.ToString() ?? "application/json", null, (int)response.StatusCode);
 }).DisableAntiforgery();
+
+app.MapGet("/thumbnail", async ([FromHeader] string videoId, IHttpClientFactory clientFactory) =>
+{
+    var client = clientFactory.CreateClient("FileSystemVideoStorage");
+    var request = new HttpRequestMessage(HttpMethod.Get, $"/thumbnail");
+    request.Headers.Add("videoId", videoId);
+
+    var response = await client.SendAsync(request);
+    if (response.IsSuccessStatusCode)
+    {
+        var stream = await response.Content.ReadAsStreamAsync();
+        return Results.File(stream, response.Content.Headers.ContentType?.ToString() ?? "image/jpeg");
+    }
+    return Results.StatusCode((int)response.StatusCode);
+});
 
 // 5. POST /comment
 app.MapPost("/comment", async (HttpRequest req, IHttpClientFactory clientFactory) =>
