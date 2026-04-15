@@ -42,6 +42,11 @@ builder.Services.AddHttpClient("VideoStorage", (sp, client) =>
     var urls = sp.GetRequiredService<IOptions<ServiceUrls>>().Value;
     client.BaseAddress = new Uri(urls.VideoStorage);
 });
+builder.Services.AddHttpClient("IdentityService", (sp, client) => 
+{
+    var urls = sp.GetRequiredService<IOptions<ServiceUrls>>().Value;
+    client.BaseAddress = new Uri(urls.IdentityService);
+});
 
 builder.Services.AddCors(options =>
 {
@@ -160,11 +165,11 @@ app.MapGet("/videos", async ([FromQuery] int page, [FromQuery] int pageSize, IHt
     var viewsResponse = await viewsTask;
 
     var metaContent = metaResponse.IsSuccessStatusCode 
-        ? await metaResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement[]>() 
+        ? await metaResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement[]>() ?? Array.Empty<System.Text.Json.JsonElement>()
         : Array.Empty<System.Text.Json.JsonElement>();
 
     var viewsContent = viewsResponse.IsSuccessStatusCode 
-        ? await viewsResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement[]>() 
+        ? await viewsResponse.Content.ReadFromJsonAsync<System.Text.Json.JsonElement[]>() ?? Array.Empty<System.Text.Json.JsonElement>()
         : Array.Empty<System.Text.Json.JsonElement>();
 
     var results = videoIds.Select(id =>
@@ -190,6 +195,40 @@ app.MapGet("/videos", async ([FromQuery] int page, [FromQuery] int pageSize, IHt
     return Results.Ok(results);
 });
 
+// Identity Service Forwarding Endpoints
+var identityEndpoints = new[] { "/login", "/register", "/profile", "/update-profile", "/oauth-login", "/oauth-register" };
+
+foreach (var endpoint in identityEndpoints)
+{
+    app.MapMethods(endpoint, new[] { "GET", "POST", "PUT", "DELETE" }, async (HttpContext context, IHttpClientFactory clientFactory) =>
+    {
+        var client = clientFactory.CreateClient("IdentityService");
+        var requestMessage = new HttpRequestMessage(new HttpMethod(context.Request.Method), endpoint + context.Request.QueryString);
+        
+        if (context.Request.ContentLength > 0 || context.Request.Headers.TransferEncoding.Count > 0)
+        {
+            requestMessage.Content = new StreamContent(context.Request.Body);
+            foreach (var header in context.Request.Headers)
+            {
+                requestMessage.Content.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
+        }
+
+        foreach (var header in context.Request.Headers)
+        {
+            if (header.Key.ToLower() != "host" && header.Key.ToLower() != "content-type" && header.Key.ToLower() != "content-length")
+            {
+                requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
+        }
+
+        var response = await client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
+        var content = await response.Content.ReadAsByteArrayAsync();
+        context.Response.StatusCode = (int)response.StatusCode;
+        return Results.Bytes(content, response.Content.Headers.ContentType?.ToString());
+    }).DisableAntiforgery();
+}
+
 app.Run();
 
 public class ServiceUrls
@@ -200,4 +239,5 @@ public class ServiceUrls
     public string VideoUpload { get; set; } = "http://localhost:5004";
     public string CommentService { get; set; } = "http://localhost:5005";
     public string VideoStorage { get; set; } = "http://localhost:8080";
+    public string IdentityService { get; set; } = "http://localhost:8086";
 }

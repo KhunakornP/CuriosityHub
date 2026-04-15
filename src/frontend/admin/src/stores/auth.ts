@@ -1,19 +1,26 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 
 export const useAuthStore = defineStore('auth', () => {
-  const isAuthenticated = ref(false);
-  const user = ref<{ username: string; token: string } | null>(null);
+  const token = ref<string | null>(localStorage.getItem('adminToken'));
+  const userRole = ref<string | null>(localStorage.getItem('adminUserRole'));
 
-  function login(username: string, token: string = 'mock-token-xyz') {
-    isAuthenticated.value = true;
-    user.value = { username, token };
+  const isAuthenticated = computed(() => !!token.value);
+  const user = computed(() => isAuthenticated.value ? { username: 'Admin', token: token.value! } : null);
+
+  function login(newToken: string, role: string = 'Admin') {
+    token.value = newToken;
+    userRole.value = role;
+    localStorage.setItem('adminToken', newToken);
+    localStorage.setItem('adminUserRole', role);
   }
 
   function logout() {
-    isAuthenticated.value = false;
-    user.value = null;
+    token.value = null;
+    userRole.value = null;
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminUserRole');
   }
 
-  return { isAuthenticated, user, login, logout };
+  return { token, isAuthenticated, user, userRole, login, logout };
 });

@@ -14,12 +14,14 @@ services:
       - ServiceUrls__VideoViews=http://video-views:8080
       - ServiceUrls__VideoUpload=http://video-upload-queue:8080
       - ServiceUrls__CommentService=http://comment-service:8080
+      - ServiceUrls__IdentityService=http://identity-service:8080
     depends_on:
       - video-streaming
       - video-metadata
       - video-views
       - video-upload-queue
       - comment-service
+      - identity-service
 
   admin-gateway:
     build:
@@ -35,6 +37,7 @@ services:
       - ServiceUrls__VideoUpload=http://video-upload-queue:8080
       - ServiceUrls__CommentService=http://comment-service:8080
       - ServiceUrls__VideoStorage=http://video-storage:8080
+      - ServiceUrls__IdentityService=http://identity-service:8080
     depends_on:
       - video-streaming
       - video-metadata
@@ -42,6 +45,7 @@ services:
       - video-upload-queue
       - comment-service
       - video-storage
+      - identity-service
 
   video-storage:
     build:

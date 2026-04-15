@@ -7,4 +7,5 @@ public class ServiceUrls
     public string VideoViews { get; set; } = "http://localhost:5003";
     public string VideoUpload { get; set; } = "http://localhost:5004";
     public string CommentService { get; set; } = "http://localhost:5005";
+    public string IdentityService { get; set; } = "http://localhost:8086";
 }

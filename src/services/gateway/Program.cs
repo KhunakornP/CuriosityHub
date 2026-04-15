@@ -38,6 +38,11 @@ builder.Services.AddHttpClient("CommentService", (sp, client) =>
     var urls = sp.GetRequiredService<IOptions<ServiceUrls>>().Value;
     client.BaseAddress = new Uri(urls.CommentService);
 });
+builder.Services.AddHttpClient("IdentityService", (sp, client) => 
+{
+    var urls = sp.GetRequiredService<IOptions<ServiceUrls>>().Value;
+    client.BaseAddress = new Uri(urls.IdentityService);
+});
 
 builder.Services.AddCors(options =>
 {
@@ -184,5 +189,39 @@ app.MapGet("/replies", async ([FromHeader] string commentId, IHttpClientFactory 
     var content = await response.Content.ReadAsStringAsync();
     return Results.Content(content, "application/json", null, (int)response.StatusCode);
 });
+
+// Identity Service Forwarding Endpoints
+var identityEndpoints = new[] { "/login", "/register", "/profile", "/update-profile", "/oauth-login", "/oauth-register" };
+
+foreach (var endpoint in identityEndpoints)
+{
+    app.MapMethods(endpoint, new[] { "GET", "POST", "PUT", "DELETE" }, async (HttpContext context, IHttpClientFactory clientFactory) =>
+    {
+        var client = clientFactory.CreateClient("IdentityService");
+        var requestMessage = new HttpRequestMessage(new HttpMethod(context.Request.Method), endpoint + context.Request.QueryString);
+        
+        if (context.Request.ContentLength > 0 || context.Request.Headers.TransferEncoding.Count > 0)
+        {
+            requestMessage.Content = new StreamContent(context.Request.Body);
+            foreach (var header in context.Request.Headers)
+            {
+                requestMessage.Content.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
+        }
+
+        foreach (var header in context.Request.Headers)
+        {
+            if (header.Key.ToLower() != "host" && header.Key.ToLower() != "content-type" && header.Key.ToLower() != "content-length")
+            {
+                requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
+            }
+        }
+
+        var response = await client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
+        var content = await response.Content.ReadAsByteArrayAsync();
+        context.Response.StatusCode = (int)response.StatusCode;
+        return Results.Bytes(content, response.Content.Headers.ContentType?.ToString());
+    }).DisableAntiforgery();
+}
 
 app.Run();

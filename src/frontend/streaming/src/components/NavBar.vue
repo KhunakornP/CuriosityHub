@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
+
+const authStore = useAuthStore()
+const router = useRouter()
+
+const logout = () => {
+  authStore.logout()
+  router.push('/login')
+}
 </script>
 
 <template>
@@ -15,17 +24,32 @@ import { RouterLink } from 'vue-router'
     
     <div class="flex items-center gap-6">
       <RouterLink 
+        v-if="authStore.isAuthenticated"
         to="/upload" 
         class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-1.5 px-4 rounded-full transition-colors flex items-center gap-2"
       >
         <span class="text-lg leading-none mb-0.5">+</span> Upload
       </RouterLink>
-      <div 
-        class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm font-semibold cursor-not-allowed opacity-50"
-        title="Profile (Not implemented yet)"
-      >
-        P
-      </div>
+
+      <template v-if="authStore.isAuthenticated">
+        <button @click="logout" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">
+          Logout
+        </button>
+        <div 
+          class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm font-semibold cursor-not-allowed opacity-50"
+          title="Profile (Not implemented yet)"
+        >
+          P
+        </div>
+      </template>
+      <template v-else>
+        <RouterLink to="/login" class="text-sm font-medium text-gray-300 hover:text-white transition-colors">
+          Login
+        </RouterLink>
+        <RouterLink to="/register" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium py-1.5 px-4 rounded-full transition-colors">
+          Sign Up
+        </RouterLink>
+      </template>
     </div>
   </nav>
 </template>
