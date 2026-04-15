@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { fetchVideos as apiFetchVideos, updateVideoMetadata, deleteVideo as apiDeleteVideo } from '../../apis/VideoService';
+import VideoUploadForm from './VideoUploadForm.vue';
 
 interface Video {
   id: string;
@@ -15,6 +16,7 @@ interface Video {
 
 const videos = ref<Video[]>([]);
 const loading = ref(false);
+const showCreateModal = ref(false);
 
 const currentPage = ref(1);
 const pageSize = ref(10);
@@ -78,13 +80,24 @@ async function deleteVideo(video: Video) {
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex flex-col h-full relative">
     <div class="flex justify-between items-center mb-4">
       <h3 class="text-lg font-semibold text-gray-800">Manage Videos</h3>
       <div class="space-x-2">
+        <button @click="showCreateModal = true" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+          Create Video
+        </button>        
         <button v-if="hasDirty" @click="saveChanges" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
           Save All Changes
         </button>
+      </div>
+    </div>
+
+    <!-- Create Video Modal -->
+    <div v-if="showCreateModal" class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-10 p-4">
+      <div class="bg-transparent w-full max-w-2xl relative">
+        <button @click="showCreateModal = false" class="absolute -top-4 -right-4 bg-gray-300 text-black px-3 py-1 rounded-full hover:bg-red-500 hover:text-white transition shadow z-20">X</button>
+        <VideoUploadForm @upload-success="() => { showCreateModal = false; fetchVideos(); }" @upload-error="(msg) => alert(msg)" />
       </div>
     </div>
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { fetchComments as apiFetchComments, updateComment as apiUpdateComment, deleteComment as apiDeleteComment } from '../../apis/CommentService';
+import { fetchComments as apiFetchComments, updateComment as apiUpdateComment, deleteComment as apiDeleteComment, createComment as apiCreateComment } from '../../apis/CommentService';
 
 interface Comment {
   id: string;
@@ -14,6 +14,8 @@ interface Comment {
 
 const comments = ref<Comment[]>([]);
 const loading = ref(false);
+const showCreateModal = ref(false);
+const newComment = ref({ videoId: '', text: '' });
 const filterBy = ref<'all' | 'videoId' | 'parentCommentId'>('all');
 
 const currentPage = ref(1);
@@ -86,10 +88,25 @@ async function deleteComment(comment: Comment) {
     }
   }
 }
+
+async function handleCreateComment() {
+  if (!newComment.value.videoId || !newComment.value.text) {
+    alert("Video ID and Comment text are required");
+    return;
+  }
+  const created = await apiCreateComment(newComment.value.videoId, newComment.value.text, "Admin");
+  if (created) {
+    showCreateModal.value = false;
+    newComment.value = { videoId: '', text: '' };
+    fetchComments(); // Refresh list
+  } else {
+    alert("Failed to create comment");
+  }
+}
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div class="flex flex-col h-full relative">
     <div class="flex justify-between items-center mb-4">
       <h3 class="text-lg font-semibold text-gray-800">Manage Comments</h3>
       <div class="space-x-4 flex items-center">
@@ -98,9 +115,34 @@ async function deleteComment(comment: Comment) {
           <option value="videoId">Group By: Video ID</option>
           <option value="parentCommentId">Group By: Parent Comment ID</option>
         </select>
+        <button @click="showCreateModal = true" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+          Create Comment
+        </button>
         <button v-if="hasDirty" @click="saveChanges" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
           Save All Changes
         </button>
+      </div>
+    </div>
+
+    <!-- Create Comment Modal -->
+    <div v-if="showCreateModal" class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-10 p-4">
+      <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md relative">
+        <button @click="showCreateModal = false" class="absolute -top-4 -right-4 bg-gray-300 text-black px-3 py-1 rounded-full hover:bg-red-500 hover:text-white transition shadow z-20">X</button>
+        <h4 class="text-xl font-bold mb-4 text-gray-800">Add New Comment</h4>
+        <form @submit.prevent="handleCreateComment" class="space-y-4">
+          <div>
+            <label class="block text-sm text-gray-900 mb-1">Video ID</label>
+            <input v-model="newComment.videoId" type="text" required class="w-full border border-gray-300 p-2 rounded focus:ring focus:ring-blue-300 text-gray-900 bg-white">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-900 mb-1">Comment Text</label>
+            <textarea v-model="newComment.text" required rows="3" class="w-full border border-gray-300 p-2 rounded focus:ring focus:ring-blue-300 text-gray-900 bg-white"></textarea>
+          </div>
+          <div class="flex justify-end space-x-2 mt-4 pt-2">
+            <button type="button" @click="showCreateModal = false" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400 text-black">Cancel</button>
+            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Create</button>
+          </div>
+        </form>
       </div>
     </div>
 

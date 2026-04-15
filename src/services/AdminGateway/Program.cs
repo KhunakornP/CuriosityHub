@@ -52,7 +52,7 @@ builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:3000")
+        policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials(); // Often needed for frontend frameworks
@@ -195,15 +195,59 @@ app.MapGet("/videos", async ([FromQuery] int page, [FromQuery] int pageSize, IHt
     return Results.Ok(results);
 });
 
+// 7. Video Upload to VideoUpload (Admin)
+app.MapPost("/upload", async (HttpRequest req, IHttpClientFactory clientFactory) =>
+{
+    var client = clientFactory.CreateClient("VideoUpload");
+    var request = new HttpRequestMessage(HttpMethod.Post, "/upload")
+    {
+        Content = new StreamContent(req.Body)
+    };
+
+    if (req.ContentType != null)
+    {
+        request.Content.Headers.TryAddWithoutValidation("Content-Type", req.ContentType);
+    }
+    
+    // Copy the Authorization header logic if an admin token is passed
+    if (req.Headers.ContainsKey("Authorization"))
+    {
+        request.Headers.TryAddWithoutValidation("Authorization", req.Headers["Authorization"].ToString());
+    }
+
+    var response = await client.SendAsync(request);
+    var content = await response.Content.ReadAsStringAsync();
+    return Results.Content(content, "application/json", null, (int)response.StatusCode);
+});
+
+// 8. Create comment
+app.MapPost("/comment", async (HttpRequest req, IHttpClientFactory clientFactory) =>
+{
+    var client = clientFactory.CreateClient("CommentService");
+    var request = new HttpRequestMessage(HttpMethod.Post, "/comment")
+    {
+        Content = new StreamContent(req.Body)
+    };
+    if (req.ContentType != null)
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(req.ContentType);
+        
+    if (req.Headers.ContainsKey("Authorization"))
+        request.Headers.TryAddWithoutValidation("Authorization", req.Headers["Authorization"].ToString());
+
+    var response = await client.SendAsync(request);
+    var content = await response.Content.ReadAsStringAsync();
+    return Results.Content(content, response.Content.Headers.ContentType?.ToString() ?? "application/json", null, (int)response.StatusCode);
+});
+
 // Identity Service Forwarding Endpoints
-var identityEndpoints = new[] { "/login", "/register", "/profile", "/update-profile", "/oauth-login", "/oauth-register" };
+var identityEndpoints = new[] { "/login", "/register", "/profile", "/update-profile", "/oauth-login", "/oauth-register", "/admin/users", "/admin/user", "/admin/user/{id}" };
 
 foreach (var endpoint in identityEndpoints)
 {
     app.MapMethods(endpoint, new[] { "GET", "POST", "PUT", "DELETE" }, async (HttpContext context, IHttpClientFactory clientFactory) =>
     {
         var client = clientFactory.CreateClient("IdentityService");
-        var requestMessage = new HttpRequestMessage(new HttpMethod(context.Request.Method), endpoint + context.Request.QueryString);
+        var requestMessage = new HttpRequestMessage(new HttpMethod(context.Request.Method), context.Request.Path.Value + context.Request.QueryString);
         
         if (context.Request.ContentLength > 0 || context.Request.Headers.TransferEncoding.Count > 0)
         {

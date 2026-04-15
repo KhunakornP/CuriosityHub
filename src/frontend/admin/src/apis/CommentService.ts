@@ -39,6 +39,22 @@ export async function updateComment(id: string, text: string): Promise<boolean> 
   }
 }
 
+export async function createComment(videoId: string, text: string, userId: string): Promise<any> {
+  const url = new URL(`${getBaseUrl()}/comment`);
+  try {
+    const res = await fetch(url.toString(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId, userId, text }),
+    });
+    if (res.ok) return await res.json();
+    return null;
+  } catch (err) {
+    console.error('Error creating comment', err);
+    return null;
+  }
+}
+
 export async function deleteComment(commentId: string): Promise<boolean> {
   const url = new URL(`${getBaseUrl()}/comment?commentId=${commentId}`)
   try {

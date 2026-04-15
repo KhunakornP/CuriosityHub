@@ -22,6 +22,7 @@ services:
       - video-upload-queue
       - comment-service
       - identity-service
+    restart: unless-stopped
 
   admin-gateway:
     build:
@@ -46,6 +47,7 @@ services:
       - comment-service
       - video-storage
       - identity-service
+    restart: unless-stopped
 
   video-storage:
     build:
@@ -57,6 +59,7 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
     volumes:
       - video_data:/app/videos
+    restart: unless-stopped
 
   video-upload-queue:
     build:
@@ -71,6 +74,7 @@ services:
         condition: service_healthy
       video-storage:
         condition: service_started
+    restart: unless-stopped
 
   video-streaming:
     build:
@@ -88,6 +92,7 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+    restart: unless-stopped
 
   video-views:
     build:
@@ -104,6 +109,7 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+    restart: unless-stopped
 
   video-metadata:
     build:
@@ -120,6 +126,7 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+    restart: unless-stopped
 
   comment-service:
     build:
@@ -133,6 +140,7 @@ services:
     depends_on:
       comment-db:
         condition: service_started
+    restart: unless-stopped
 
   identity-service:
     build:
@@ -148,6 +156,7 @@ services:
     depends_on:
       identity-db:
         condition: service_started
+    restart: unless-stopped
 
   # ----------Database----------
   video-streaming-db:

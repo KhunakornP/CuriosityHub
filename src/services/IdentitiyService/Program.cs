@@ -69,5 +69,6 @@ app.UseAuthorization();
 
 app.MapAuthEndpoints();
 app.MapProfileEndpoints();
+app.MapAdminEndpoints();
 
 app.Run();

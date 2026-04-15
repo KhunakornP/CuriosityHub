@@ -83,6 +83,13 @@ public class AuthenticationService : IAuthenticationService
         return new AuthResponse(token, user.Email, user.Id, user.Role);
     }
 
+    public string CreatePasswordHash(string password)
+    {
+        var salt = CreateSalt();
+        var hashedPwd = HashPassword(password, salt);
+        return Convert.ToBase64String(salt) + ":" + Convert.ToBase64String(hashedPwd);
+    }
+
     private byte[] CreateSalt()
     {
         var buffer = new byte[16];

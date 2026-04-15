@@ -17,7 +17,12 @@ async function submitLogin() {
     const data = await AuthService.login(username.value, password.value);
     
     // Log the user into the pinia store using the real token
-    authStore.login(data.token, data.role || 'Admin');
+    // Admin role is integer 2 based on UserRole enum (Visitor=0, Researcher=1, Admin=2)
+    if (data.role !== 2 && data.role !== 'Admin' && data.role !== '2') {
+      error.value = 'Access denied. Administrator privileges required.';
+      return;
+    }
+    authStore.login(data.token, data.role.toString());
     router.push('/admin');
   } catch (err: any) {
     error.value = err.message || 'An error occurred during login. Please try again.';

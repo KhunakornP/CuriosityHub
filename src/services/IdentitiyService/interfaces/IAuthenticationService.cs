@@ -6,4 +6,5 @@ public interface IAuthenticationService
 {
     Task<AuthResponse?> RegisterAsync(RegisterReq request);
     Task<AuthResponse?> LoginAsync(LoginReq request);
+    string CreatePasswordHash(string password);
 }
