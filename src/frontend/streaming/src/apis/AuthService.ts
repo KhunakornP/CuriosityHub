@@ -17,13 +17,13 @@ export const AuthService = {
     return res.json();
   },
 
-  async register(email: string, password: string) {
+  async register(email: string, password: string, firstName: string, lastName: string) {
     const res = await fetch(`${API_URL}/register`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ email, password })
+      body: JSON.stringify({ email, password, firstName, lastName })
     });
 
     if (!res.ok) {

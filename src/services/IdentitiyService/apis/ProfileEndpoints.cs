@@ -15,6 +15,12 @@ public static class ProfileEndpoints
             var userIdStr = context.User.FindFirst("userId")?.Value;
             if (userIdStr == null || !Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
+            // Allow requesting another user's profile via query param
+            if (context.Request.Query.TryGetValue("targetUserId", out var targetUserIdStr) && Guid.TryParse(targetUserIdStr, out var targetUserId))
+            {
+                userId = targetUserId;
+            }
+
             var profile = await profileService.GetProfileAsync(userId);
             return profile != null ? Results.Ok(profile) : Results.NotFound();
         });

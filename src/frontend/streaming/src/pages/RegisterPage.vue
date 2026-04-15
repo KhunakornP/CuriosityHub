@@ -6,6 +6,8 @@ import { AuthService } from '../apis/AuthService'
 
 const email = ref('')
 const password = ref('')
+const firstName = ref('')
+const lastName = ref('')
 const error = ref('')
 const router = useRouter()
 const authStore = useAuthStore()
@@ -13,9 +15,9 @@ const authStore = useAuthStore()
 const register = async () => {
   error.value = ''
   try {
-    const data = await AuthService.register(email.value, password.value)
+    const data = await AuthService.register(email.value, password.value, firstName.value, lastName.value)
     
-    authStore.setToken(data.token, data.role || 'Viewer')
+    authStore.setToken(data.token, data.role || 'Viewer', data.email || email.value)
     router.push('/home')
   } catch (err: any) {
     error.value = err.message || 'An error occurred during registration. Please try again.'
@@ -31,6 +33,20 @@ const register = async () => {
 
     <div class="mt-10 sm:mx-auto sm:w-full sm:max-w-sm">
       <form class="space-y-6" @submit.prevent="register">
+        <div>
+          <label for="firstName" class="block text-sm/6 font-medium text-white">First Name</label>
+          <div class="mt-2">
+            <input type="text" name="firstName" id="firstName" v-model="firstName" required class="block w-full rounded-md bg-white/5 border border-white/10 px-3 py-1.5 text-base text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-500 sm:text-sm/6">
+          </div>
+        </div>
+
+        <div>
+          <label for="lastName" class="block text-sm/6 font-medium text-white">Last Name</label>
+          <div class="mt-2">
+            <input type="text" name="lastName" id="lastName" v-model="lastName" required class="block w-full rounded-md bg-white/5 border border-white/10 px-3 py-1.5 text-base text-white outline-1 -outline-offset-1 outline-white/10 placeholder:text-gray-500 focus:outline-2 focus:-outline-offset-2 focus:outline-indigo-500 sm:text-sm/6">
+          </div>
+        </div>
+
         <div>
           <label for="email" class="block text-sm/6 font-medium text-white">Email address</label>
           <div class="mt-2">

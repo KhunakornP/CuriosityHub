@@ -5,6 +5,7 @@ import VideoStreamingPage from '../pages/VideoStreamingPage.vue'
 import VideoUploadPage from '../pages/VideoUploadPage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import RegisterPage from '../pages/RegisterPage.vue'
+import ProfilePage from '../pages/ProfilePage.vue'
 import { useAuthStore } from '../stores/auth'
 
 const router = createRouter({
@@ -42,6 +43,12 @@ const router = createRouter({
       name: 'register',
       component: RegisterPage,
       meta: { guestOnly: true }
+    },
+    {
+      path: '/profile',
+      name: 'profile',
+      component: ProfilePage,
+      meta: { requiresAuth: true }
     }
   ],
 })
