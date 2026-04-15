@@ -196,14 +196,27 @@ app.MapGet("/metadata/publisher", async ([FromQuery] string publisherId, IHttpCl
 
 app.MapPut("/update", async (HttpRequest req, IHttpClientFactory clientFactory) =>
 {
+    using var reader = new StreamReader(req.Body);
+    var bodyText = await reader.ReadToEndAsync();
+    
     var client = clientFactory.CreateClient("VideoMetadata");
     var request = new HttpRequestMessage(HttpMethod.Put, "/update")
     {
-        Content = new StreamContent(req.Body)
+        Content = new StringContent(bodyText, System.Text.Encoding.UTF8, "application/json")
     };
-    request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(req.ContentType ?? "application/json");
 
     var response = await client.SendAsync(request);
+    
+    if (response.IsSuccessStatusCode)
+    {
+        var streamClient = clientFactory.CreateClient("VideoStreaming");
+        var streamRequest = new HttpRequestMessage(HttpMethod.Put, "/update")
+        {
+            Content = new StringContent(bodyText, System.Text.Encoding.UTF8, "application/json")
+        };
+        await streamClient.SendAsync(streamRequest);
+    }
+
     var content = await response.Content.ReadAsStringAsync();
     return Results.Content(content, "application/json", null, (int)response.StatusCode);
 });

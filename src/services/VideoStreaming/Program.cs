@@ -256,6 +256,34 @@ app.MapGet("/user-videos/{userId}", async (string userId, int page, int pageSize
     });
 });
 
+app.MapPut("/update", async (HttpRequest req, IMongoCollection<VideoCache> collection) =>
+{
+    try
+    {
+        using var reader = new StreamReader(req.Body);
+        var body = await reader.ReadToEndAsync();
+        using var jsonDoc = JsonDocument.Parse(body);
+        
+        if (jsonDoc.RootElement.TryGetProperty("videoId", out var videoIdElem) && 
+            jsonDoc.RootElement.TryGetProperty("title", out var titleElem))
+        {
+            var videoId = videoIdElem.GetString();
+            var title = titleElem.GetString();
+            
+            if (!string.IsNullOrEmpty(videoId) && !string.IsNullOrEmpty(title))
+            {
+                var update = Builders<VideoCache>.Update.Set(v => v.Title, title);
+                await collection.UpdateOneAsync(v => v.VideoId == videoId, update);
+            }
+        }
+        return Results.Ok();
+    }
+    catch (Exception)
+    {
+        return Results.BadRequest();
+    }
+});
+
 app.Run();
 
 public class VideoCache

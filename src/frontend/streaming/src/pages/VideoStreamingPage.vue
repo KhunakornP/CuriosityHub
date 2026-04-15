@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { fetchVideoDetails, fetchVideoStreamBlobUrl } from '../apis/VideoService'
+import { fetchVideoDetails, fetchVideoStreamBlobUrl, fetchRecentVideos } from '../apis/VideoService'
 import { fetchComments, fetchReplies, postComment, type Comment, type CreateCommentRequest } from '../apis/CommentService'
 import CommentPost from '../components/CommentPost.vue'
 import { useAuthStore } from '../stores/auth'
@@ -34,13 +34,28 @@ onUnmounted(() => {
 onMounted(async () => {
   isFetchingVideo.value = true
   try {
-    const [details, streamUrl, loadedComments] = await Promise.all([
+    const [details, streamUrl, loadedComments, recentList] = await Promise.all([
       fetchVideoDetails(videoId),
       fetchVideoStreamBlobUrl(videoId),
-      fetchComments(videoId)
+      fetchComments(videoId),
+      fetchRecentVideos(videoId)
     ])
     
-    if (details) videoData.value = details
+    if (details) {
+      videoData.value = details
+      
+      // Merge extra details from recentList
+      if (recentList && recentList.length > 0) {
+        const cacheData = recentList[0]
+        if (!videoData.value.metadata) videoData.value.metadata = {}
+        // Merge channel and views
+        videoData.value.metadata.channelName = cacheData.channelName
+        videoData.value.metadata.thumbnailUrl = cacheData.thumbnailUrl
+        if (!videoData.value.views) videoData.value.views = {}
+        videoData.value.views.count = cacheData.views
+      }
+    }
+    
     if (streamUrl) videoUrl.value = streamUrl
     if (loadedComments) comments.value = loadedComments.map(c => ({ ...c, showReplies: false }))
     
@@ -187,9 +202,10 @@ const formatDate = (dateString: string) => {
 
         <div v-else class="aspect-video bg-neutral-900 rounded-xl flex items-center justify-center border border-neutral-800 shadow-lg overflow-hidden">
           <div v-if="isFetchingVideo" class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-          <video v-else-if="videoUrl" :src="videoUrl" controls autoplay class="w-full h-full object-cover">
+          <video v-else-if="videoUrl" :src="videoUrl" :poster="videoData?.metadata?.thumbnailUrl" controls autoplay class="w-full h-full object-cover">
             Your browser does not support the video tag.
           </video>
+          <img v-else-if="videoData?.metadata?.thumbnailUrl" :src="videoData?.metadata?.thumbnailUrl" class="w-full h-full object-cover" />
           <p v-else class="text-neutral-500">Video not found or failed to load (ID: {{ videoId }})</p>
         </div>
         
@@ -200,10 +216,10 @@ const formatDate = (dateString: string) => {
           <div class="flex items-center justify-between mb-4 border-b border-neutral-800 pb-4">
             <div class="flex items-center gap-4 text-sm text-neutral-400">
               <span class="text-white hover:text-blue-400 transition-colors cursor-pointer">
-                {{ videoData?.metadata?.channelName || 'Unknown Channel' }}
+                {{ publisherName }}
               </span>
-              <span>{{ videoData?.views?.count || '0' }} views</span>
-              <span>{{ videoData?.metadata?.publishedAt || 'Unknown Date' }}</span>
+              <span>{{ videoData?.views?.totalViews || '0' }} views</span>
+              <span>{{ videoData?.metadata?.publishedAt ? formatDate(videoData.metadata.publishedAt) : 'Unknown Date' }}</span>
             </div>
             <!-- Removed Likes and Shares -->
           </div>

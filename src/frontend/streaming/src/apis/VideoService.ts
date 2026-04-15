@@ -2,14 +2,19 @@ import type { Video } from '../components/VideoCard.vue'
 
 const getBaseUrl = () => import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000'
 
-export async function fetchRecentVideos(): Promise<Video[]> {
+export async function fetchRecentVideos(videoId?: string): Promise<Video[]> {
   const url = new URL(`${getBaseUrl()}/recent-videos`)
   try {
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+    }
+    if (videoId) {
+        headers['videoId'] = videoId
+    }
+
     const res = await fetch(url.toString(), {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     })
     
     if (!res.ok) {
