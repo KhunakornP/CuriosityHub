@@ -6,7 +6,7 @@ import { useAuthStore } from '../stores/auth'
 const authStore = useAuthStore()
 const router = useRouter()
 
-const isResearcher = computed(() => authStore.userRole === 'Researcher' || authStore.userRole === 'Admin')
+const isResearcher = computed(() => authStore.userRole === 1 || authStore.userRole === 2 || authStore.userRole === '1' || authStore.userRole === '2')
 
 const displayEmail = computed(() => {
   if (!authStore.userEmail) return ''

@@ -20,7 +20,7 @@ public class ProfileService : IProfileService
     public async Task<ProfileResponse?> GetProfileAsync(Guid userId)
     {
         var profile = await _context.Profiles.FirstOrDefaultAsync(p => p.UserId == userId);
-        return profile != null ? new ProfileResponse(profile.UserId, profile.FirstName, profile.LastName, profile.Description, profile.ProfileUrl) : null;
+        return profile != null ? new ProfileResponse(profile.UserId, profile.FirstName, profile.LastName, profile.Description) : null;
     }
 
     public async Task<ProfileResponse?> GetProfileByEmailAsync(string email)
@@ -28,7 +28,7 @@ public class ProfileService : IProfileService
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
         if (user == null) return null;
         var profile = await _context.Profiles.FirstOrDefaultAsync(p => p.UserId == user.Id);
-        return profile != null ? new ProfileResponse(profile.UserId, profile.FirstName, profile.LastName, profile.Description, profile.ProfileUrl) : null;
+        return profile != null ? new ProfileResponse(profile.UserId, profile.FirstName, profile.LastName, profile.Description) : null;
     }
 
     public async Task<ProfileResponse?> UpdateProfileAsync(Guid userId, UpdateProfileReq request)
@@ -39,9 +39,8 @@ public class ProfileService : IProfileService
         profile.FirstName = request.FirstName;
         profile.LastName = request.LastName;
         profile.Description = request.Description;
-        profile.ProfileUrl = request.ProfileUrl;
 
         await _context.SaveChangesAsync();
-        return new ProfileResponse(profile.UserId, profile.FirstName, profile.LastName, profile.Description, profile.ProfileUrl);
+        return new ProfileResponse(profile.UserId, profile.FirstName, profile.LastName, profile.Description);
     }
 }

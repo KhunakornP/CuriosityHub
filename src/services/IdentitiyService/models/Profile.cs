@@ -14,7 +14,6 @@ public class Profile
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
-    public string ProfileUrl { get; set; } = string.Empty;
 
     // Navigation property
     [ForeignKey(nameof(UserId))]

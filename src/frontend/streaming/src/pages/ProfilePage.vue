@@ -13,7 +13,7 @@ const lastName = ref('')
 const description = ref('')
 const profileUrl = ref('')
 const email = computed(() => authStore.userEmail || '')
-const isResearcher = computed(() => authStore.userRole === 'Researcher' || authStore.userRole === 'Admin')
+const isResearcher = computed(() => authStore.userRole === 1 || authStore.userRole === 2 || authStore.userRole === '1' || authStore.userRole === '2')
 const publisherId = computed(() => authStore.userId || '')
 
 const isLoading = ref(true)
@@ -25,6 +25,9 @@ const studioVideos = ref<VideoMetadata[]>([])
 const loadingStudio = ref(false)
 const studioError = ref('')
 const updatingVideoId = ref<string | null>(null)
+const currentPage = ref(1)
+const totalPages = ref(1)
+const pageSize = 10
 
 // Refs for editing current video
 const editTitle = ref('')
@@ -55,16 +58,31 @@ onMounted(async () => {
   }
 })
 
-const loadStudioVideos = async () => {
+const loadStudioVideos = async (page: number = 1) => {
   if (!authStore.token || !publisherId.value) return
   loadingStudio.value = true
   studioError.value = ''
   try {
-    studioVideos.value = await VideoStudioService.getPublisherVideos(publisherId.value, authStore.token)
+    const res = await VideoStudioService.getPublisherVideos(publisherId.value, authStore.token, page, pageSize)
+    studioVideos.value = res.videos
+    currentPage.value = res.page
+    totalPages.value = Math.ceil(res.totalCount / res.pageSize) || 1
   } catch (err: any) {
     studioError.value = err.message || 'Failed to load studio videos'
   } finally {
     loadingStudio.value = false
+  }
+}
+
+const nextPage = () => {
+  if (currentPage.value < totalPages.value) {
+    loadStudioVideos(currentPage.value + 1)
+  }
+}
+
+const prevPage = () => {
+  if (currentPage.value > 1) {
+    loadStudioVideos(currentPage.value - 1)
   }
 }
 
@@ -91,7 +109,7 @@ const saveProfile = async () => {
 }
 
 const startEditingVideo = (video: VideoMetadata) => {
-  updatingVideoId.value = video.videoId
+  updatingVideoId.value = (video.id || video.videoId)!
   editTitle.value = video.title
   editDescription.value = video.description || ''
   editVideoFile.value = null
@@ -240,53 +258,66 @@ const navigateToUpload = () => {
         <div v-else-if="studioError" class="text-red-400">{{ studioError }}</div>
         <div v-else-if="studioVideos.length === 0" class="text-gray-400">No videos found. Upload one!</div>
         <div v-else class="space-y-6">
-          <div v-for="video in studioVideos" :key="video.videoId" class="bg-gray-900 rounded-lg p-6 shadow-lg border border-gray-800">
-            <div v-if="updatingVideoId !== video.videoId">
-              <h3 class="text-xl font-bold">{{ video.title }}</h3>
-              <p class="text-gray-400 mt-2">{{ video.description || 'No description' }}</p>
-              <div class="mt-4 text-sm text-gray-500">
-                <span>Duration: {{ (video.totalDuration).toFixed(2) }}s</span> | 
-                <span>Published: {{ new Date(video.publishedAt).toLocaleDateString() }}</span>
+          <div v-for="video in studioVideos" :key="(video.id || video.videoId)!" class="bg-gray-900 rounded-lg p-6 shadow-lg border border-gray-800 flex flex-col md:flex-row gap-6">
+            <div class="w-full md:w-1/3 flex-shrink-0">
+               <img v-if="video.thumbnailUrl" :src="video.thumbnailUrl" alt="Thumbnail" class="w-full h-auto rounded-md object-cover border border-gray-800 aspect-video mix-blend-screen bg-gray-800" />
+               <div v-else class="w-full h-auto aspect-video bg-gray-800 rounded-md border border-gray-700 flex items-center justify-center text-gray-500">No Image</div>
+            </div>
+            <div class="flex-grow flex flex-col justify-center">
+              <div v-if="updatingVideoId !== (video.id || video.videoId)">
+                <h3 class="text-xl font-bold">{{ video.title }}</h3>
+                <p class="text-gray-400 mt-2">{{ video.description || 'No description' }}</p>
+                <div class="mt-4 text-sm text-gray-500 flex gap-2 items-center">
+                  <span>Views: {{ video.views }}</span>
+                  <span class="text-gray-700">&bull;</span>
+                  <span>Published: {{ video.publishedAt }}</span>
+                </div>
+                <div class="mt-4 flex gap-4">
+                  <button @click="startEditingVideo(video)" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md font-semibold transition shadow-md hover:shadow-lg">
+                    Edit Video
+                  </button>
+                </div>
               </div>
-              <div class="mt-4 flex gap-4">
-                <button @click="startEditingVideo(video)" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md font-semibold transition">
-                  Edit Video
-                </button>
+
+              <div v-else class="space-y-4 border-t-0 p-4 border border-gray-700 rounded-md bg-gray-800/20">
+                <h3 class="text-lg font-bold px-1">Edit Video Metadata & Content</h3>
+                
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1 px-1">Title</label>
+                  <input v-model="editTitle" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
+                </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1 px-1">Description</label>
+                  <textarea v-model="editDescription" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+                </div>
+
+                <div class="pt-2">
+                  <label class="block text-sm font-medium text-gray-300 mb-1 px-1">Replace Video File (Optional)</label>
+                  <input type="file" accept="video/mp4" @change="handleVideoFileChange" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-800 file:text-indigo-300 hover:file:bg-gray-700 transition" />
+                </div>
+
+                <div class="pt-2">
+                  <label class="block text-sm font-medium text-gray-300 mb-1 px-1">Replace Thumbnail (Optional)</label>
+                  <input type="file" accept="image/jpeg,image/png,image/webp" @change="handleThumbnailFileChange" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-800 file:text-indigo-300 hover:file:bg-gray-700 transition" />
+                </div>
+
+                <div class="flex gap-4 pt-4 px-1">
+                  <button @click="saveVideoUpdates((video.id || video.videoId)!)" class="bg-green-600 hover:bg-green-500 text-white px-5 py-2 rounded-md font-semibold transition shadow-md hover:shadow-lg">
+                    Save Changes
+                  </button>
+                  <button @click="cancelEditingVideo" class="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2 rounded-md font-semibold transition shadow-sm hover:shadow">
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
-
-            <div v-else class="space-y-4 border-t border-gray-700 pt-4 mt-4">
-              <h3 class="text-lg font-bold">Edit Video Metadata & Content</h3>
-              
-              <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Title</label>
-                <input v-model="editTitle" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Description</label>
-                <textarea v-model="editDescription" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Replace Video File (Optional)</label>
-                <input type="file" accept="video/mp4" @change="handleVideoFileChange" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-800 file:text-indigo-300 hover:file:bg-gray-700" />
-              </div>
-
-              <div>
-                <label class="block text-sm font-medium text-gray-300 mb-1">Replace Thumbnail (Optional)</label>
-                <input type="file" accept="image/jpeg,image/png" @change="handleThumbnailFileChange" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-800 file:text-indigo-300 hover:file:bg-gray-700" />
-              </div>
-
-              <div class="flex gap-4 pt-4">
-                <button @click="saveVideoUpdates(video.videoId)" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-md font-semibold transition">
-                  Save Changes
-                </button>
-                <button @click="cancelEditingVideo" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-md font-semibold transition">
-                  Cancel
-                </button>
-              </div>
-            </div>
+          </div>
+          
+          <div v-if="totalPages > 1" class="flex justify-between items-center bg-gray-900 border border-gray-800 px-6 py-4 rounded-xl shadow-lg mt-6">
+              <button @click="prevPage" :disabled="currentPage === 1" class="px-5 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white font-medium rounded-md transition shadow">Previous</button>
+              <div class="flex gap-2 text-sm text-gray-300 font-medium">Page <span class="text-white">{{ currentPage }}</span> of <span class="text-white">{{ totalPages }}</span></div>
+              <button @click="nextPage" :disabled="currentPage === totalPages" class="px-5 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white font-medium rounded-md transition shadow">Next</button>
           </div>
         </div>
       </div>

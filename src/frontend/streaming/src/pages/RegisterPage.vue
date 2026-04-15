@@ -17,7 +17,7 @@ const register = async () => {
   try {
     const data = await AuthService.register(email.value, password.value, firstName.value, lastName.value)
     
-    authStore.setToken(data.token, data.role || 'Viewer', data.email || email.value)
+    authStore.setToken(data.token, data.role ?? 0, data.email || email.value, data.userId || '')
     router.push('/home')
   } catch (err: any) {
     error.value = err.message || 'An error occurred during registration. Please try again.'

@@ -13,10 +13,9 @@ public class User
     [EmailAddress]
     public string Email { get; set; } = string.Empty;
 
-    public UserRole Role { get; set; } = UserRole.Viewer;
+    public UserRole Role { get; set; } = UserRole.Visitor;
 
     // Navigation properties
     public PasswordAuth? PasswordAuth { get; set; }
-    public GoogleAuth? GoogleAuth { get; set; }
     public Profile? Profile { get; set; }
 }

@@ -2,7 +2,7 @@ namespace IdentitiyService.Models.Enums;
 
 public enum UserRole
 {
-    Viewer,
-    Researcher,
-    Admin
+    Visitor = 0,
+    Researcher = 1,
+    Admin = 2
 }

@@ -24,18 +24,6 @@ public static class AuthEndpoints
             return result != null ? Results.Ok(result) : Results.Unauthorized();
         });
 
-        group.MapPost("/oauth-register", async (GoogleAuthReq request, IAuthenticationService authService) =>
-        {
-            var result = await authService.GoogleLoginAsync(request);
-            return result != null ? Results.Ok(result) : Results.Unauthorized();
-        });
-
-        group.MapPost("/oauth-login", async (GoogleAuthReq request, IAuthenticationService authService) =>
-        {
-            var result = await authService.GoogleLoginAsync(request);
-            return result != null ? Results.Ok(result) : Results.Unauthorized();
-        });
-
         group.MapPost("/validate", (ValidateReq req, HttpContext context) =>
         {
             var userIdClaim = context.User.FindFirst("userId")?.Value;
@@ -43,7 +31,7 @@ public static class AuthEndpoints
 
             if (userIdClaim == null || roleClaim == null) return Results.Unauthorized();
             
-            if (userIdClaim != req.UserId.ToString() || !string.Equals(roleClaim, req.Role.ToString(), StringComparison.OrdinalIgnoreCase))
+            if (userIdClaim != req.UserId.ToString() || roleClaim != ((int)req.Role).ToString())
                 return Results.Unauthorized();
 
             return Results.Ok(new { isValid = true });

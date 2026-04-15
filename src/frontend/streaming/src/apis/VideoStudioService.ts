@@ -1,18 +1,21 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export interface VideoMetadata {
-    videoId: string
+    id: string
     title: string
-    description: string
-    totalDuration: number
-    resolution: string
-    publisherId: string
+    description?: string
+    thumbnailUrl: string
+    channelName: string
+    views: number
     publishedAt: string
+    // kept for backwards compat with original UI
+    videoId?: string
+    publisherId?: string
 }
 
 export class VideoStudioService {
-    static async getPublisherVideos(publisherId: string, token: string): Promise<VideoMetadata[]> {
-        const response = await fetch(`${API_URL}/metadata/publisher?publisherId=${publisherId}`, {
+    static async getPublisherVideos(publisherId: string, token: string, page: number = 1, pageSize: number = 10): Promise<{ videos: VideoMetadata[], totalCount: number, page: number, pageSize: number }> {
+        const response = await fetch(`${API_URL}/user-videos/${publisherId}?page=${page}&pageSize=${pageSize}`, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }

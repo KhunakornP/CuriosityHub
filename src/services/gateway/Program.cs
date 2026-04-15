@@ -94,6 +94,15 @@ app.MapGet("/recent-videos", async ([FromHeader] string? videoId, IHttpClientFac
     return Results.Content(content, "application/json", null, (int)response.StatusCode);
 });
 
+// 2b. GET /user-videos
+app.MapGet("/user-videos/{userId}", async (string userId, [FromQuery] int page, [FromQuery] int pageSize, IHttpClientFactory clientFactory) =>
+{
+    var client = clientFactory.CreateClient("VideoStreaming");
+    var response = await client.GetAsync($"/user-videos/{userId}?page={(page > 0 ? page : 1)}&pageSize={(pageSize > 0 ? pageSize : 10)}");
+    var content = await response.Content.ReadAsStringAsync();
+    return Results.Content(content, "application/json", null, (int)response.StatusCode);
+});
+
 // 3. GET /video-details
 app.MapGet("/video-details", async ([FromHeader] string videoId, IHttpClientFactory clientFactory) =>
 {

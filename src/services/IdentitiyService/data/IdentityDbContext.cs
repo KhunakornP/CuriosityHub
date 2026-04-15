@@ -9,7 +9,6 @@ public class IdentityDbContext : DbContext
 
     public DbSet<User> Users { get; set; } = null!;
     public DbSet<PasswordAuth> PasswordAuths { get; set; } = null!;
-    public DbSet<GoogleAuth> GoogleAuths { get; set; } = null!;
     public DbSet<Profile> Profiles { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -24,12 +23,6 @@ public class IdentityDbContext : DbContext
             .HasOne(u => u.PasswordAuth)
             .WithOne(pa => pa.User)
             .HasForeignKey<PasswordAuth>(pa => pa.UserId)
-            .OnDelete(DeleteBehavior.Cascade);
-
-        modelBuilder.Entity<User>()
-            .HasOne(u => u.GoogleAuth)
-            .WithOne(ga => ga.User)
-            .HasForeignKey<GoogleAuth>(ga => ga.UserId)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<User>()

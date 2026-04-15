@@ -142,6 +142,39 @@ app.MapGet("/recent-videos", async (IMongoCollection<VideoCache> collection, IHt
         }
     }
 
+    // Process Publishers
+    var clientFactoryForIdentity = httpClientFactory.CreateClient();
+    foreach (var video in recentVideos)
+    {
+        if ((string.IsNullOrEmpty(video.PublisherName) || video.PublisherName == "CuriosityHub User") 
+            && !string.IsNullOrEmpty(video.PublisherId) && video.PublisherId != "AnonymousUser")
+        {
+            try
+            {
+                var identityResponse = await clientFactoryForIdentity.GetAsync($"http://identity-service:8080/public-profile?targetId={video.PublisherId}");
+                if (identityResponse.IsSuccessStatusCode)
+                {
+                    var jsonDoc = await identityResponse.Content.ReadFromJsonAsync<JsonElement>();
+                    var firstName = jsonDoc.TryGetProperty("firstName", out var f) ? f.GetString() : "";
+                    var lastName = jsonDoc.TryGetProperty("lastName", out var l) ? l.GetString() : "";
+                    var newName = $"{firstName} {lastName}".Trim();
+                    
+                    if (!string.IsNullOrEmpty(newName))
+                    {
+                        video.PublisherName = newName;
+                        
+                        var update = Builders<VideoCache>.Update.Set(v => v.PublisherName, newName);
+                        await collection.UpdateOneAsync(v => v.VideoId == video.VideoId, update);
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback gracefully
+            }
+        }
+    }
+
     // Map to ViewModel for rendering
     var dtos = recentVideos.Select(v => new {
         id = v.VideoId,
@@ -155,6 +188,74 @@ app.MapGet("/recent-videos", async (IMongoCollection<VideoCache> collection, IHt
     return Results.Ok(dtos);
 });
 
+app.MapGet("/user-videos/{userId}", async (string userId, int page, int pageSize, IMongoCollection<VideoCache> collection, IHttpClientFactory httpClientFactory) =>
+{
+    if (page < 1) page = 1;
+    if (pageSize < 1) pageSize = 10;
+    if (pageSize > 50) pageSize = 50;
+
+    var skip = (page - 1) * pageSize;
+
+    var filter = Builders<VideoCache>.Filter.Eq(v => v.PublisherId, userId);
+    var totalCount = await collection.CountDocumentsAsync(filter);
+    var userVideos = await collection.Find(filter)
+        .SortByDescending(v => v.Id)
+        .Skip(skip)
+        .Limit(pageSize)
+        .ToListAsync();
+
+    var videoIds = userVideos.Select(v => v.VideoId).ToArray();
+    Dictionary<string, long> viewCounts = new();
+
+    if (videoIds.Length > 0)
+    {
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            var queryParams = string.Join("&", videoIds.Select(id => $"videoIds={id}"));
+            var response = await client.GetAsync($"http://video-views:8080/video-views?{queryParams}");
+            
+            if (response.IsSuccessStatusCode)
+            {
+                var viewsData = await response.Content.ReadFromJsonAsync<JsonElement[]>();
+                if (viewsData != null)
+                {
+                    foreach (var item in viewsData)
+                    {
+                        var vId = item.GetProperty("videoId").GetString();
+                        var count = item.GetProperty("totalViews").GetInt64();
+                        if (!string.IsNullOrEmpty(vId))
+                        {
+                            viewCounts[vId] = count;
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Fallback to 0
+        }
+    }
+
+    var dtos = userVideos.Select(v => new {
+        id = v.VideoId,
+        title = v.Title,
+        thumbnailUrl = v.ThumbnailUrl,
+        channelName = string.IsNullOrEmpty(v.PublisherName) ? "CuriosityHub User" : v.PublisherName,
+        views = viewCounts.TryGetValue(v.VideoId, out var vc) ? vc : 0,
+        publishedAt = v.CachedAt.ToString("MMM dd, yyyy")
+    });
+
+    return Results.Ok(new
+    {
+        TotalCount = totalCount,
+        Page = page,
+        PageSize = pageSize,
+        Videos = dtos
+    });
+});
+
 app.Run();
 
 public class VideoCache
@@ -166,6 +267,7 @@ public class VideoCache
     public string VideoId { get; set; } = null!;
     public string Title { get; set; } = string.Empty;
     public string ThumbnailUrl { get; set; } = string.Empty;
+    public string PublisherId { get; set; } = string.Empty;
     public string PublisherName { get; set; } = "CuriosityHub User";
     public DateTime CachedAt { get; set; }
 }
@@ -263,6 +365,7 @@ public class VideoCacheListener : BackgroundService
                         VideoId = evt.VideoId,
                         Title = evt.Title,
                         ThumbnailUrl = thumbnailUrl,
+                        PublisherId = evt.PublisherId ?? "AnonymousUser",
                         PublisherName = publisherName,
                         CachedAt = DateTime.UtcNow
                     };
