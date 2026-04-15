@@ -130,6 +130,21 @@ services:
       comment-db:
         condition: service_started
 
+  identity-service:
+    build:
+      context: ./services/IdentitiyService
+      dockerfile: Dockerfile
+    ports:
+      - "8086:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=identity-db;Port=3306;Database=identitydb;User=root;Password=secret;
+      - Jwt__Secret=super_secret_key_that_is_long_enough_to_be_secure_32bytes
+      - Jwt__Issuer=http://localhost:5000
+    depends_on:
+      identity-db:
+        condition: service_started
+
   # ----------Database----------
   video-streaming-db:
     restart: always
@@ -166,6 +181,17 @@ services:
     volumes:
       - comment_data:/var/lib/mysql
 
+  identity-db:
+    restart: always
+    image: mariadb:latest
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: identitydb
+    ports:
+      - "3307:3306"
+    volumes:
+      - identity_data:/var/lib/mysql
+
   # ----------MessageQueue----------
   rabbitmq:
     restart: always
@@ -191,4 +217,5 @@ volumes:
   video_views_data:
   video_metadata_data:
   comment_data:
+  identity_data:
   rabbitmq_data:

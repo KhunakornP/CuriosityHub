@@ -4,6 +4,7 @@
     <Project Path="src/services/AdminGateway/AdminGateway.csproj" />
     <Project Path="src/services/CommentService/CommentService.csproj" />
     <Project Path="src/services/gateway/gateway.csproj" />
+    <Project Path="src/services/IdentitiyService/IdentitiyService.csproj" />
     <Project Path="src/services/VideoMetadata/VideoMetadata.csproj" />
     <Project Path="src/services/VideoStreaming/VideoStreaming.csproj" />
     <Project Path="src/services/VideoUploadQueue/VideoUploadQueue.csproj" />
