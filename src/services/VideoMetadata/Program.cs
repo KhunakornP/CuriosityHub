@@ -65,6 +65,17 @@ app.MapGet("/video-metadatas", async ([FromQuery] string[] videoIds, IMongoColle
     return Results.Ok(metadataList);
 });
 
+app.MapGet("/metadata/publisher", async ([FromQuery] string publisherId, IMongoCollection<VideoMetadata> collection) =>
+{
+    if (string.IsNullOrWhiteSpace(publisherId))
+        return Results.BadRequest("publisherId is required");
+
+    var filter = Builders<VideoMetadata>.Filter.Eq(v => v.PublisherId, publisherId);
+    var metadataList = await collection.Find(filter).ToListAsync();
+    
+    return Results.Ok(metadataList);
+});
+
 app.MapPut("/update", async ([FromBody] UpdateVideoMetadataRequest request, IMongoCollection<VideoMetadata> collection) =>
 {
     if (string.IsNullOrWhiteSpace(request.VideoId)) return Results.BadRequest("VideoId is required");
@@ -147,6 +158,7 @@ public class MetadataRabbitMqListener : BackgroundService
                 var videoId = payload.GetProperty("VideoId").GetString() ?? throw new Exception("VideoId is required");
                 var title = payload.GetProperty("Title").GetString() ?? "Unknown";
                 var description = payload.TryGetProperty("Description", out var descProp) ? descProp.GetString() : null;
+                var publisherId = payload.TryGetProperty("PublisherId", out var idProp) ? idProp.GetString() : "AnonymousUser";
 
                 var newMetadata = new VideoMetadata
                 {
@@ -156,7 +168,7 @@ public class MetadataRabbitMqListener : BackgroundService
                     Description = description,
                     TotalDuration = 0, // Placeholder
                     Resolution = "Unknown",
-                    PublisherId = "AnonymousUser",
+                    PublisherId = publisherId,
                     PublishedAt = DateTime.UtcNow
                 };
 

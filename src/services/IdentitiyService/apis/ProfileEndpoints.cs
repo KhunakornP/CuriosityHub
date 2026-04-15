@@ -10,6 +10,20 @@ public static class ProfileEndpoints
     {
         var group = routes.MapGroup("/").RequireAuthorization().WithOpenApi();
 
+        // Allow anonymous requests for specific public profile data
+        routes.MapGet("/public-profile", async (HttpContext context, IProfileService profileService) =>
+        {
+            if (context.Request.Query.TryGetValue("targetId", out var targetIdStr))
+            {
+                if (Guid.TryParse(targetIdStr, out var targetUserId))
+                {
+                    var profileById = await profileService.GetProfileAsync(targetUserId);
+                    return profileById != null ? Results.Ok(profileById) : Results.NotFound();
+                }
+            }
+            return Results.BadRequest();
+        }).WithOpenApi();
+
         group.MapGet("/profile", async (HttpContext context, IProfileService profileService) =>
         {
             var userIdStr = context.User.FindFirst("userId")?.Value;

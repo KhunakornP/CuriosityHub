@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { ProfileService } from '../apis/ProfileService'
+import { VideoStudioService, VideoMetadata } from '../apis/VideoStudioService'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -13,11 +14,23 @@ const description = ref('')
 const profileUrl = ref('')
 const email = computed(() => authStore.userEmail || '')
 const isResearcher = computed(() => authStore.userRole === 'Researcher' || authStore.userRole === 'Admin')
+const publisherId = computed(() => authStore.userId || '')
 
 const isLoading = ref(true)
 const isSaving = ref(false)
 const successMessage = ref('')
 const errorMessage = ref('')
+
+const studioVideos = ref<VideoMetadata[]>([])
+const loadingStudio = ref(false)
+const studioError = ref('')
+const updatingVideoId = ref<string | null>(null)
+
+// Refs for editing current video
+const editTitle = ref('')
+const editDescription = ref('')
+const editVideoFile = ref<File | null>(null)
+const editThumbnailFile = ref<File | null>(null)
 
 onMounted(async () => {
   if (!authStore.token) {
@@ -31,12 +44,29 @@ onMounted(async () => {
     lastName.value = profile.lastName || ''
     description.value = profile.description || ''
     profileUrl.value = profile.profileUrl || ''
+
+    if (isResearcher.value && publisherId.value) {
+      await loadStudioVideos()
+    }
   } catch (error: any) {
     errorMessage.value = 'Failed to load profile parameters: ' + (error.message || error)
   } finally {
     isLoading.value = false
   }
 })
+
+const loadStudioVideos = async () => {
+  if (!authStore.token || !publisherId.value) return
+  loadingStudio.value = true
+  studioError.value = ''
+  try {
+    studioVideos.value = await VideoStudioService.getPublisherVideos(publisherId.value, authStore.token)
+  } catch (err: any) {
+    studioError.value = err.message || 'Failed to load studio videos'
+  } finally {
+    loadingStudio.value = false
+  }
+}
 
 const saveProfile = async () => {
   if (!authStore.token) return
@@ -57,6 +87,57 @@ const saveProfile = async () => {
     errorMessage.value = 'Failed to update profile: ' + (error.message || error)
   } finally {
     isSaving.value = false
+  }
+}
+
+const startEditingVideo = (video: VideoMetadata) => {
+  updatingVideoId.value = video.videoId
+  editTitle.value = video.title
+  editDescription.value = video.description || ''
+  editVideoFile.value = null
+  editThumbnailFile.value = null
+}
+
+const cancelEditingVideo = () => {
+  updatingVideoId.value = null
+  editTitle.value = ''
+  editDescription.value = ''
+  editVideoFile.value = null
+  editThumbnailFile.value = null
+}
+
+const handleVideoFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    editVideoFile.value = target.files[0]
+  }
+}
+
+const handleThumbnailFileChange = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    editThumbnailFile.value = target.files[0]
+  }
+}
+
+const saveVideoUpdates = async (videoId: string) => {
+  if (!authStore.token) return
+  try {
+    await VideoStudioService.updateMetadata(videoId, editTitle.value, editDescription.value, authStore.token)
+    
+    if (editVideoFile.value) {
+      await VideoStudioService.updateVideoFile(videoId, editVideoFile.value, authStore.token)
+    }
+    
+    if (editThumbnailFile.value) {
+      await VideoStudioService.updateThumbnailFile(videoId, editThumbnailFile.value, authStore.token)
+    }
+
+    alert('Video updated successfully!')
+    cancelEditingVideo()
+    await loadStudioVideos()
+  } catch (err: any) {
+    alert('Failed to update video: ' + err.message)
   }
 }
 
@@ -150,6 +231,64 @@ const navigateToUpload = () => {
             </button>
           </div>
         </form>
+      </div>
+
+      <!-- Researcher Video Studio Section -->
+      <div v-if="isResearcher" class="mt-12">
+        <h2 class="text-2xl font-bold mb-6">Video Studio</h2>
+        <div v-if="loadingStudio" class="text-gray-400">Loading your videos...</div>
+        <div v-else-if="studioError" class="text-red-400">{{ studioError }}</div>
+        <div v-else-if="studioVideos.length === 0" class="text-gray-400">No videos found. Upload one!</div>
+        <div v-else class="space-y-6">
+          <div v-for="video in studioVideos" :key="video.videoId" class="bg-gray-900 rounded-lg p-6 shadow-lg border border-gray-800">
+            <div v-if="updatingVideoId !== video.videoId">
+              <h3 class="text-xl font-bold">{{ video.title }}</h3>
+              <p class="text-gray-400 mt-2">{{ video.description || 'No description' }}</p>
+              <div class="mt-4 text-sm text-gray-500">
+                <span>Duration: {{ (video.totalDuration).toFixed(2) }}s</span> | 
+                <span>Published: {{ new Date(video.publishedAt).toLocaleDateString() }}</span>
+              </div>
+              <div class="mt-4 flex gap-4">
+                <button @click="startEditingVideo(video)" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-md font-semibold transition">
+                  Edit Video
+                </button>
+              </div>
+            </div>
+
+            <div v-else class="space-y-4 border-t border-gray-700 pt-4 mt-4">
+              <h3 class="text-lg font-bold">Edit Video Metadata & Content</h3>
+              
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Title</label>
+                <input v-model="editTitle" type="text" class="w-full bg-gray-800 border border-gray-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Description</label>
+                <textarea v-model="editDescription" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Replace Video File (Optional)</label>
+                <input type="file" accept="video/mp4" @change="handleVideoFileChange" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-800 file:text-indigo-300 hover:file:bg-gray-700" />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-300 mb-1">Replace Thumbnail (Optional)</label>
+                <input type="file" accept="image/jpeg,image/png" @change="handleThumbnailFileChange" class="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-gray-800 file:text-indigo-300 hover:file:bg-gray-700" />
+              </div>
+
+              <div class="flex gap-4 pt-4">
+                <button @click="saveVideoUpdates(video.videoId)" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded-md font-semibold transition">
+                  Save Changes
+                </button>
+                <button @click="cancelEditingVideo" class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-md font-semibold transition">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

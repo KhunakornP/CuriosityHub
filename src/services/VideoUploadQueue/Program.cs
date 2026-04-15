@@ -34,7 +34,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? description, IFormFile video, IFormFile? thumbnail, IHttpClientFactory httpClientFactory, IConnection rabbitConnection, SagaTracker tracker) =>
+app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? description, [FromForm] string? publisherId, IFormFile video, IFormFile? thumbnail, IHttpClientFactory httpClientFactory, IConnection rabbitConnection, SagaTracker tracker) =>
 {
     if (video == null || video.Length == 0) return Results.BadRequest("No video provided.");
     if (string.IsNullOrWhiteSpace(title)) return Results.BadRequest("Title is required.");
@@ -43,7 +43,7 @@ app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? descri
     var videoStorageUrl = "http://video-storage:8080/upload";
     
     // Register the saga state before upload
-    tracker.Sagas[videoId] = new SagaState { VideoId = videoId, Title = title };
+    tracker.Sagas[videoId] = new SagaState { VideoId = videoId, Title = title, PublisherId = publisherId ?? "AnonymousUser" };
 
     using var client = httpClientFactory.CreateClient();
 
@@ -93,7 +93,7 @@ app.MapPost("/upload", async ([FromForm] string title, [FromForm] string? descri
     {
         using var channel = await rabbitConnection.CreateChannelAsync();
         
-        var eventMessage = new { VideoId = videoId, Title = title, Description = description };
+        var eventMessage = new { VideoId = videoId, Title = title, Description = description, PublisherId = publisherId ?? "AnonymousUser" };
         var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(eventMessage));
 
         // 1. Metadata Queue
@@ -124,6 +124,7 @@ public class SagaState
 {
     public string VideoId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
+    public string PublisherId { get; set; } = "AnonymousUser";
     public bool MetadataSuccess { get; set; }
     public bool ViewsSuccess { get; set; }
     public bool IsFailed { get; set; }
@@ -215,7 +216,7 @@ public class UploadWorkflowOrchestrator : BackgroundService
                             if (saga.MetadataSuccess && saga.ViewsSuccess)
                             {
                                 _logger.LogInformation($"Video {videoId} completed saga! Publishing video_uploaded event.");
-                                var successEvent = new { VideoId = videoId, Title = saga.Title };
+                                var successEvent = new { VideoId = videoId, Title = saga.Title, PublisherId = saga.PublisherId };
                                 var successBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(successEvent));
                                 
                                 // Step 5: Publish successful upload event

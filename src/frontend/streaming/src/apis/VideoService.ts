@@ -71,11 +71,14 @@ export async function fetchVideoStreamBlobUrl(videoId: string): Promise<string |
   }
 }
 
-export async function uploadVideo(formData: FormData): Promise<boolean> {
+export async function uploadVideo(formData: FormData, token: string): Promise<boolean> {
   const url = new URL(`${getBaseUrl()}/upload`)
   try {
     const res = await fetch(url.toString(), {
       method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
       body: formData,
       // Note: Don't set 'Content-Type' header manually when sending FormData, 
       // the browser will automatically set it to 'multipart/form-data' with the correct boundary.

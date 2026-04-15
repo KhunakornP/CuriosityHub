@@ -111,8 +111,8 @@ app.MapGet("/recent-videos", async (IMongoCollection<VideoCache> collection) =>
     var dtos = recentVideos.Select(v => new {
         id = v.VideoId,
         title = v.Title,
-        thumbnailUrl = "",
-        channelName = "CuriosityHub User",
+        thumbnailUrl = v.ThumbnailUrl,
+        channelName = v.PublisherName,
         views = 0,
         publishedAt = v.CachedAt.ToString("MMM dd, yyyy")
     });
@@ -130,6 +130,8 @@ public class VideoCache
     
     public string VideoId { get; set; } = null!;
     public string Title { get; set; } = string.Empty;
+    public string ThumbnailUrl { get; set; } = string.Empty;
+    public string PublisherName { get; set; } = "CuriosityHub User";
     public DateTime CachedAt { get; set; }
 }
 
@@ -137,15 +139,18 @@ public class VideoCacheEvent
 {
     public string VideoId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
+    public string PublisherId { get; set; } = string.Empty;
 }
 
 public class VideoCacheListener : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public VideoCacheListener(IServiceProvider serviceProvider)
+    public VideoCacheListener(IServiceProvider serviceProvider, IHttpClientFactory httpClientFactory)
     {
         _serviceProvider = serviceProvider;
+        _httpClientFactory = httpClientFactory;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -171,11 +176,59 @@ public class VideoCacheListener : BackgroundService
                     using var scope = _serviceProvider.CreateScope();
                     var collection = scope.ServiceProvider.GetRequiredService<IMongoCollection<VideoCache>>();
                     
+                    // Fetch thumbnail from video-storage
+                    string thumbnailUrl = "";
+                    try 
+                    {
+                        var client = _httpClientFactory.CreateClient();
+                        var request = new HttpRequestMessage(HttpMethod.Get, "http://video-storage:8080/thumbnail");
+                        request.Headers.Add("videoId", evt.VideoId);
+                        
+                        var response = await client.SendAsync(request, stoppingToken);
+                        if (response.IsSuccessStatusCode)
+                        {
+                            var bytes = await response.Content.ReadAsByteArrayAsync(stoppingToken);
+                            var base64 = Convert.ToBase64String(bytes);
+                            // Get content type
+                            var contentType = response.Content.Headers.ContentType?.ToString() ?? "image/jpeg";
+                            thumbnailUrl = $"data:{contentType};base64,{base64}";
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Log or ignore if thumbnail fetching fails
+                    }
+
+                    // Fetch Publisher name from identity-service
+                    string publisherName = "CuriosityHub User";
+                    if (!string.IsNullOrEmpty(evt.PublisherId) && evt.PublisherId != "AnonymousUser")
+                    {
+                        try
+                        {
+                            var client = _httpClientFactory.CreateClient();
+                            var identityResponse = await client.GetAsync($"http://identity-service:8080/public-profile?targetId={evt.PublisherId}", stoppingToken);
+                            if (identityResponse.IsSuccessStatusCode)
+                            {
+                                var jsonDoc = await identityResponse.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: stoppingToken);
+                                var firstName = jsonDoc.GetProperty("firstName").GetString() ?? "";
+                                var lastName = jsonDoc.GetProperty("lastName").GetString() ?? "";
+                                publisherName = $"{firstName} {lastName}".Trim();
+                                if (string.IsNullOrEmpty(publisherName)) publisherName = "CuriosityHub User";
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Continue with default name if identity service fails
+                        }
+                    }
+
                     var entry = new VideoCache 
                     {
                         Id = ObjectId.GenerateNewId().ToString(),
                         VideoId = evt.VideoId,
                         Title = evt.Title,
+                        ThumbnailUrl = thumbnailUrl,
+                        PublisherName = publisherName,
                         CachedAt = DateTime.UtcNow
                     };
                     

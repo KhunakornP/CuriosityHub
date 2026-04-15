@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { uploadVideo } from '../apis/VideoService'
+import { useAuthStore } from '../stores/auth'
 
 const emit = defineEmits<{
   (e: 'upload-start'): void
@@ -8,11 +9,14 @@ const emit = defineEmits<{
   (e: 'upload-error', message: string): void
 }>()
 
+const authStore = useAuthStore()
 const title = ref('')
 const description = ref('')
 const selectedFile = ref<File | null>(null)
+const selectedThumbnail = ref<File | null>(null)
 const isUploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const thumbnailInput = ref<HTMLInputElement | null>(null)
 
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
@@ -20,6 +24,15 @@ const handleFileChange = (event: Event) => {
     selectedFile.value = target.files[0]
   } else {
     selectedFile.value = null
+  }
+}
+
+const handleThumbnailChange = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    selectedThumbnail.value = target.files[0]
+  } else {
+    selectedThumbnail.value = null
   }
 }
 
@@ -76,19 +89,31 @@ const submitUpload = async () => {
   formData.append('video', selectedFile.value)
 
   try {
-    const thumbnailBlob = await generateThumbnail(selectedFile.value)
-    if (thumbnailBlob) {
-      formData.append('thumbnail', thumbnailBlob, 'thumbnail.jpg')
+    if (selectedThumbnail.value) {
+      // Use user-provided thumbnail
+      formData.append('thumbnail', selectedThumbnail.value, selectedThumbnail.value.name)
+    } else {
+      // Generate auto-thumbnail only if user didn't provide one
+      const thumbnailBlob = await generateThumbnail(selectedFile.value)
+      if (thumbnailBlob) {
+        formData.append('thumbnail', thumbnailBlob, 'thumbnail.jpg')
+      }
     }
 
-    const success = await uploadVideo(formData)
+    if (authStore.userId) {
+      formData.append('publisherId', authStore.userId)
+    }
+
+    const success = await uploadVideo(formData, authStore.token || '')
     
     if (success) {
       // Reset form
       title.value = ''
       description.value = ''
       selectedFile.value = null
+      selectedThumbnail.value = null
       if (fileInput.value) fileInput.value.value = ''
+      if (thumbnailInput.value) thumbnailInput.value.value = ''
       
       emit('upload-success')
     } else {
@@ -162,6 +187,37 @@ const submitUpload = async () => {
             </div>
             <p class="text-xs text-neutral-500">
               {{ selectedFile ? selectedFile.name : 'MP4, WebM, Ogg up to 500MB' }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Thumbnail Input -->
+      <div>
+        <label for="thumbnailFile" class="block text-sm font-medium text-neutral-300 mb-1">Thumbnail (Optional)</label>
+        <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-neutral-700 border-dashed rounded-lg hover:border-blue-500 transition-colors bg-neutral-800/50">
+          <div class="space-y-1 text-center">
+            <svg class="mx-auto h-12 w-12 text-neutral-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+              <path d="M4 16l16-12 16 12m-16 28V20m16 8v16H8V28" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <div class="flex text-sm text-neutral-300">
+              <label for="thumbnailFile" class="relative cursor-pointer bg-neutral-800 rounded-md font-medium text-blue-500 hover:text-blue-400 focus-within:outline-none px-1">
+                <span>Upload a thumbnail</span>
+                <input 
+                  id="thumbnailFile" 
+                  ref="thumbnailInput"
+                  name="thumbnailFile" 
+                  type="file" 
+                  accept="image/jpeg, image/png, image/webp" 
+                  class="sr-only" 
+                  @change="handleThumbnailChange"
+                  :disabled="isUploading"
+                />
+              </label>
+              <p class="pl-1">or let us generate one</p>
+            </div>
+            <p class="text-xs text-neutral-500">
+              {{ selectedThumbnail ? selectedThumbnail.name : 'JPG, PNG, WebP up to 5MB' }}
             </p>
           </div>
         </div>
