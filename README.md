@@ -95,6 +95,9 @@ Frameworks:
 
 
 ## Running the application
+
+> **⚠️ Warning:** The `npm run dev` commands used below start a local development server. A real production environment needs to not use `npm run dev`. Instead, you should build the frontend applications (e.g., `npm run build`) and serve the resulting static assets with a production-ready web server like Nginx.
+
 1. Start the microservices and required infrastructure using Docker Compose:
    ```bash
    cd src
@@ -113,5 +116,39 @@ Frameworks:
    npm run dev
    ```
 
+## Stopping the application
+1. Stop the microservices
+   ```bash
+   docker compose down
+   ```
+
 ## Screenshots
-To be added.
+
+### Admin Dashboard
+![Admin Comments Management](./screenshots/admin%20c.JPG)
+*Admin Comments Management*
+
+![Admin Users Management](./screenshots/admin%20u.JPG)
+*Admin Users Management*
+
+![Admin Videos Management](./screenshots/admin%20v.JPG)
+*Admin Videos Management*
+
+### Streaming Frontend
+![Streaming Home Page](./screenshots/streaming%20home.JPG)
+*Streaming Home Page*
+
+![Sign In Page](./screenshots/sign%20in.JPG)
+*Sign In Page*
+
+![Upload Video Page](./screenshots/upload%20video.JPG)
+*Upload Video Page*
+
+![Video Streaming Player](./screenshots/video%20streaming.JPG)
+*Video Streaming Player*
+
+![Researcher Profile Overview](./screenshots/profile%20page%20r.JPG)
+*Researcher Profile Overview*
+
+![Researcher Profile Details](./screenshots/profile%20page%20r2.JPG)
+*Researcher Profile Details*
