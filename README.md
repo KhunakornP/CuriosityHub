@@ -2,7 +2,7 @@
 A web application for passionate researchers to share their research to a casual audience.
 
 ## Description
-A web application for passionate researchers to share their research to a casual audience.
+Curiosity Hub is a web based video streaming platform designed for researchers to share their research to a wider and more casual audience. It allows students or interested people to see academic content and innovations while providing a space for discussion.
 
 ## System architecture overview
 Curiosity hub follows a microservice design.
@@ -34,13 +34,17 @@ Curiosity hub uses the following frameworks and libraries
 
 Languages:
 - C#
+- TypeScript
 - Python
 
 Frameworks:
 - ASP .Net
 - Vue
-- Axios
-- RabbitMQTT
+- Pinia
+- RabbitMQ + .NET client
+- EnitityFramework
+- MongoDB driver
+- MySQL driver
 
 ## Installation & setup instructions
 ### Pre-requisites
