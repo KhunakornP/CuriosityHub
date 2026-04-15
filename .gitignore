@@ -55,3 +55,6 @@ nunit-*.xml
 
 # vscode files
 .vscode/
+
+# env files
+.env

@@ -8,7 +8,7 @@ services:
     ports:
       - "5000:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
       - ServiceUrls__VideoStreaming=http://video-streaming:8080
       - ServiceUrls__VideoMetadata=http://video-metadata:8080
       - ServiceUrls__VideoViews=http://video-views:8080
@@ -31,7 +31,7 @@ services:
     ports:
       - "5001:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
       - ServiceUrls__VideoStreaming=http://video-streaming:8080
       - ServiceUrls__VideoMetadata=http://video-metadata:8080
       - ServiceUrls__VideoViews=http://video-views:8080
@@ -56,7 +56,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
     volumes:
       - video_data:/app/videos
     restart: unless-stopped
@@ -68,7 +68,7 @@ services:
     ports:
       - "8081:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -83,8 +83,8 @@ services:
     ports:
       - "8082:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__MongoDb=mongodb://video-streaming-db:27017
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      - ConnectionStrings__MongoDb=${MONGO_STREAMING_CONNECTION_STRING}
     depends_on:
       video-streaming-db:
         condition: service_started
@@ -101,9 +101,9 @@ services:
     ports:
       - "8083:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__MongoDb=mongodb://video-views-db:27017
-      - ConnectionStrings__RabbitMq=rabbitmq
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      - ConnectionStrings__MongoDb=${MONGO_VIEWS_CONNECTION_STRING}
+      - ConnectionStrings__RabbitMq=${RABBITMQ_CONNECTION_STRING}
     depends_on:
       video-views-db:
         condition: service_started
@@ -118,9 +118,9 @@ services:
     ports:
       - "8084:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__MongoDb=mongodb://video-metadata-db:27017
-      - ConnectionStrings__RabbitMq=rabbitmq
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      - ConnectionStrings__MongoDb=${MONGO_METADATA_CONNECTION_STRING}
+      - ConnectionStrings__RabbitMq=${RABBITMQ_CONNECTION_STRING}
     depends_on:
       video-metadata-db:
         condition: service_started
@@ -135,8 +135,8 @@ services:
     ports:
       - "8085:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Server=comment-db;Database=commentsdb;User=root;Password=secret;
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      - ConnectionStrings__DefaultConnection=${COMMENT_DB_CONNECTION_STRING}
     depends_on:
       comment-db:
         condition: service_started
@@ -149,10 +149,10 @@ services:
     ports:
       - "8086:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Development
-      - ConnectionStrings__DefaultConnection=Server=identity-db;Port=3306;Database=identitydb;User=root;Password=secret;
-      - Jwt__Secret=super_secret_key_that_is_long_enough_to_be_secure_32bytes
-      - Jwt__Issuer=http://localhost:5000
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT}
+      - ConnectionStrings__DefaultConnection=${IDENTITY_DB_CONNECTION_STRING}
+      - Jwt__Secret=${JWT_SECRET}
+      - Jwt__Issuer=${JWT_ISSUER}
     depends_on:
       identity-db:
         condition: service_started
@@ -187,8 +187,8 @@ services:
     restart: always
     image: mariadb:latest
     environment:
-      MYSQL_ROOT_PASSWORD: secret
-      MYSQL_DATABASE: commentsdb
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${COMMENT_DB_NAME}
     ports:
       - "3306:3306"
     volumes:
@@ -198,8 +198,8 @@ services:
     restart: always
     image: mariadb:latest
     environment:
-      MYSQL_ROOT_PASSWORD: secret
-      MYSQL_DATABASE: identitydb
+      MYSQL_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${IDENTITY_DB_NAME}
     ports:
       - "3307:3306"
     volumes:
@@ -210,8 +210,8 @@ services:
     restart: always
     image: rabbitmq:3-management
     environment:
-      - RABBITMQ_DEFAULT_USER=guest
-      - RABBITMQ_DEFAULT_PASS=guest
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS}
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
       interval: 10s

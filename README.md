@@ -5,7 +5,20 @@ A web application for passionate researchers to share their research to a casual
 A web application for passionate researchers to share their research to a casual audience.
 
 ## System architecture overview
-Curiosity hub follows a microservice design
+Curiosity hub follows a microservice design.
+Each distributed service has it's own responsibilities outlined below
+| Service | Responsibility |
+| :--- | :--- |
+| **Admin Gateway** | Proxy for other microservices for the admin frontend |
+| **Gateway** | Proxy for other microservices for the video streaming frontend |
+| **VideoStreaming** | Serve content for the frontend, provide caching. |
+| **VideoUpload** | Mediator for video uploads. Ensure data consistency for video uploads |
+| **IdentityService** | Handles authentication and user profiles. JWT issuing and verification |
+| **VideoViews** | Tracks views for each video |
+| **VideoMetadata** | Stores details for each video. |
+| **VideoStorage** | Provides storage for video files |
+| **Streaming (frontend)** | Provides a web interface for users (viewers, researchers) |
+| **Admin (frontend)** | Provides a web interface for admins |
 
 ## User roles
 The application has the following user roles
@@ -31,10 +44,74 @@ Frameworks:
 
 ## Installation & setup instructions
 ### Pre-requisites
+- Docker (or a suitable alternative like Podman)
+- .NET SDK
+- Node.js (v24 or above)
 
 ### Installation setup
+1. Clone the repository to your local machine:
+   ```bash
+   git clone <repository-url>
+   cd CuriosityHub
+   ```
+
+2. Install dependencies for the streaming frontend:
+   ```bash
+   cd src/frontend/streaming
+   npm install
+   ```
+
+3. Install dependencies for the admin frontend:
+   ```bash
+   cd ../admin
+   npm install
+   ```
+
+4. Configure environment variables:
+   Copy the provided `sample.env` file to create a `.env` file in the `src` directory.
+   ```bash
+   cd ../..
+   cp src/sample.env src/.env
+   ```
+
+5. (optional) configure environment variables
+   The `.env` file contains the following configurations that you can adjust:
+   | Variable | Description |
+   | :--- | :--- |
+   | `ASPNETCORE_ENVIRONMENT` | Sets the application environment (e.g., `Development`, `Production`). |
+   | `MARIADB_ROOT_PASSWORD` | Root password for the MariaDB instances. |
+   | `COMMENT_DB_NAME` | Database name for the Comment Service. |
+   | `COMMENT_DB_CONNECTION_STRING` | Connection string for the Comment Service to connect to its database. |
+   | `IDENTITY_DB_NAME` | Database name for the Identity Service. |
+   | `IDENTITY_DB_CONNECTION_STRING` | Connection string for the Identity Service to connect to its database. |
+   | `MONGO_STREAMING_CONNECTION_STRING` | MongoDB connection URL for the Video Streaming Service. |
+   | `MONGO_VIEWS_CONNECTION_STRING` | MongoDB connection URL for the Video Views track Service. |
+   | `MONGO_METADATA_CONNECTION_STRING` | MongoDB connection URL for the Video Metadata Service. |
+   | `RABBITMQ_USER` | Default username for the RabbitMQ message broker. |
+   | `RABBITMQ_PASS` | Default password for the RabbitMQ message broker. |
+   | `RABBITMQ_CONNECTION_STRING` | Connection string / hostname for interacting with the RabbitMQ instance. |
+   | `JWT_SECRET` | Secret key used for signing and verifying JWTs in the Identity Service. |
+   | `JWT_ISSUER` | Issuer URL for the generated JSON Web Tokens. |
+
 
 ## Running the application
+1. Start the microservices and required infrastructure using Docker Compose:
+   ```bash
+   cd src
+   docker compose up -d --build
+   ```
+
+2. Start the streaming frontend application:
+   ```bash
+   cd src/frontend/streaming
+   npm run dev
+   ```
+
+3. Start the admin frontend application:
+   ```bash
+   cd src/frontend/admin
+   npm run dev
+   ```
 
 ## Screenshots
 To be added.
